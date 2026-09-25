@@ -268,12 +268,12 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         <details id="chatterboxPanel" class="custom-voice hidden" open>
           <summary>Chatterbox Voice Clone</summary>
           <div class="custom-body">
-            <p class="mini">Upload a clean reference sample for a voice you have permission to use. The sample is saved locally in this browser and uploaded temporarily when Chatterbox needs it.</p>
+            <p class="mini">Upload a clean reference sample for a voice you have permission to use. The sample is saved locally in this browser and sent securely through Vercel only when Chatterbox generates.</p>
 
             <div class="field">
               <label for="chatterboxFile">Reference voice sample</label>
               <input id="chatterboxFile" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac,.webm,audio/wav,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a,audio/ogg,audio/flac,audio/webm">
-              <p class="mini">A clean 10–30 second sample is ideal. Keep the file under 4 MB.</p>
+              <p class="mini">A clean 10–30 second sample is ideal. Keep the file under 2.5 MB.</p>
               <button id="saveChatterboxVoice" type="button">Save reference voice</button>
               <div id="chatterboxRefStatus" class="custom-status" aria-live="polite"></div>
             </div>
@@ -487,57 +487,50 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       chatterboxPanel.classList.toggle('hidden', !isChatterbox);
     }
 
-    async function uploadChatterboxReference(file) {
+    function fileToDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Could not read the reference audio.'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function saveChatterboxReference(file) {
       validateUpload(file, 'reference voice');
+      if (file.size > 2.5 * 1024 * 1024) {
+        throw new Error('For Chatterbox, keep the reference voice under 2.5 MB.');
+      }
       const duration = await audioDuration(file);
       if (duration < 5) throw new Error('Reference sample should contain at least 5 seconds of speech.');
       if (duration > 60.5) throw new Error('Please use a reference sample 60 seconds or shorter.');
 
-      const response = await fetch('/api/chatterbox-reference', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(file.name || 'reference.wav'),
-          'X-File-Type': file.type || 'application/octet-stream'
-        },
-        body: file
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'Reference upload failed.');
-
-      chatterboxRefStatus.dataset.refUrl = data.url || '';
-      chatterboxRefStatus.dataset.refExpires = data.expires_at || '';
-      chatterboxRefStatus.dataset.refName = file.name || 'reference audio';
-      chatterboxRefStatus.textContent = 'Reference voice ready: ' + (file.name || 'audio sample');
       await saveReferenceLocally(file);
+      chatterboxRefStatus.dataset.refName = file.name || 'reference audio';
+      chatterboxRefStatus.textContent = 'Reference voice saved: ' + (file.name || 'audio sample');
       saveState();
-      return data.url;
     }
 
     async function ensureChatterboxReference() {
-      const currentUrl = chatterboxRefStatus.dataset.refUrl || '';
-      const expires = chatterboxRefStatus.dataset.refExpires || '';
-      const expiresMs = expires ? Date.parse(expires) : 0;
-      if (currentUrl && (!expiresMs || expiresMs > Date.now() + 120000)) return currentUrl;
-
       const localFile = await getReferenceLocally();
       if (!localFile) throw new Error('Choose and save a Chatterbox reference voice first.');
-      chatterboxRefStatus.textContent = 'Refreshing reference voice…';
-      return await uploadChatterboxReference(localFile);
+      if (localFile.size > 2.5 * 1024 * 1024) {
+        throw new Error('For Chatterbox, keep the saved reference voice under 2.5 MB.');
+      }
+      return await fileToDataURL(localFile);
     }
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    async function createChatterboxPrediction(text, referenceUrl) {
+    async function createChatterboxPrediction(text, referenceDataUri) {
       const response = await fetch('/api/chatterbox-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           input: text,
-          reference_url: referenceUrl,
+          reference_data_uri: referenceDataUri,
           exaggeration: Number(exaggeration.value),
           cfg_weight: Number(cfgWeight.value),
           temperature: Number(temperature.value),
@@ -576,8 +569,6 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           cfgWeight: cfgWeight.value,
           temperature: temperature.value,
           seed: seed.value,
-          chatterboxRefUrl: chatterboxRefStatus.dataset.refUrl || '',
-          chatterboxRefExpires: chatterboxRefStatus.dataset.refExpires || '',
           chatterboxRefName: chatterboxRefStatus.dataset.refName || '',
           voice: voice.value,
           speed: speed.value,
@@ -604,11 +595,9 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         if (state.cfgWeight !== undefined) cfgWeight.value = state.cfgWeight;
         if (state.temperature !== undefined) temperature.value = state.temperature;
         if (state.seed !== undefined) seed.value = state.seed;
-        if (typeof state.chatterboxRefUrl === 'string' && state.chatterboxRefUrl) {
-          chatterboxRefStatus.dataset.refUrl = state.chatterboxRefUrl;
-          chatterboxRefStatus.dataset.refExpires = state.chatterboxRefExpires || '';
-          chatterboxRefStatus.dataset.refName = state.chatterboxRefName || 'saved reference';
-          chatterboxRefStatus.textContent = 'Reference voice saved: ' + (state.chatterboxRefName || 'audio sample');
+        if (typeof state.chatterboxRefName === 'string' && state.chatterboxRefName) {
+          chatterboxRefStatus.dataset.refName = state.chatterboxRefName;
+          chatterboxRefStatus.textContent = 'Reference voice saved: ' + state.chatterboxRefName;
         }
 
         if (Array.isArray(state.customVoices)) {
@@ -774,7 +763,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       try {
         const file = chatterboxFile.files[0];
         if (!file) throw new Error('Choose a reference voice file first.');
-        await uploadChatterboxReference(file);
+        await saveChatterboxReference(file);
       } catch (error) {
         chatterboxRefStatus.textContent = error.message || 'Could not save reference voice.';
       } finally {
@@ -829,28 +818,29 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           if (!Number.isFinite(cfg) || cfg < 0.2 || cfg > 1) throw new Error('CFG / Pace must be between 0.20 and 1.00.');
           if (!Number.isFinite(temp) || temp < 0.05 || temp > 5) throw new Error('Temperature must be between 0.05 and 5.00.');
 
-          const referenceUrl = await ensureChatterboxReference();
+          const referenceDataUri = await ensureChatterboxReference();
           status.textContent = 'Starting Chatterbox…';
-          const started = await createChatterboxPrediction(text, referenceUrl);
+          const started = await createChatterboxPrediction(text, referenceDataUri);
           if (!started.id) throw new Error('Chatterbox did not return a prediction ID.');
 
-          const result = await waitForChatterbox(started.id);
-          const outputUrl = Array.isArray(result.output) ? result.output[0] : result.output;
-          if (!outputUrl) throw new Error('Chatterbox finished without an audio file.');
+          await waitForChatterbox(started.id);
 
-          try {
-            const audioResponse = await fetch(outputUrl);
-            if (!audioResponse.ok) throw new Error('Could not download generated audio.');
-            const blob = await audioResponse.blob();
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-            objectUrl = URL.createObjectURL(blob);
-            audio.src = objectUrl;
-            download.href = objectUrl;
-          } catch (_) {
-            audio.src = outputUrl;
-            download.href = outputUrl;
+          status.textContent = 'Downloading generated audio…';
+          const audioResponse = await fetch('/api/chatterbox-audio?id=' + encodeURIComponent(started.id), { cache: 'no-store' });
+          if (!audioResponse.ok) {
+            let message = 'Could not download generated audio.';
+            try {
+              const error = await audioResponse.json();
+              if (error && error.error) message = error.error;
+            } catch (_) {}
+            throw new Error(message);
           }
 
+          const blob = await audioResponse.blob();
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = URL.createObjectURL(blob);
+          audio.src = objectUrl;
+          download.href = objectUrl;
           download.download = 'story-narration-chatterbox.wav';
           output.style.display = 'block';
           status.textContent = 'Finished with Chatterbox.';
