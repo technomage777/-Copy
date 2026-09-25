@@ -2,6 +2,12 @@
   "functions": {
     "api/speech.js": {
       "maxDuration": 60
+    },
+    "api/voice-consent.js": {
+      "maxDuration": 60
+    },
+    "api/custom-voice.js": {
+      "maxDuration": 60
     }
   }
 }
