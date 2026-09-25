@@ -1,7 +1,7 @@
 const VOICES = new Set([
   'alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'
 ]);
-const FORMATS = new Set(['mp3','wav']);
+const FORMATS = new Set(['mp3','wav','flac','aac','opus','pcm']);
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -57,7 +57,15 @@ module.exports = async function handler(req, res) {
     }
 
     const bytes = Buffer.from(await upstream.arrayBuffer());
-    res.setHeader('Content-Type', format === 'wav' ? 'audio/wav' : 'audio/mpeg');
+    const contentTypes = {
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      flac: 'audio/flac',
+      aac: 'audio/aac',
+      opus: 'audio/ogg',
+      pcm: 'application/octet-stream'
+    };
+    res.setHeader('Content-Type', contentTypes[format] || 'application/octet-stream');
     res.setHeader('Content-Disposition', 'inline; filename="story-narration.' + format + '"');
     res.setHeader('Content-Length', bytes.length);
     return res.status(200).send(bytes);
