@@ -100,6 +100,27 @@
       border: 1px solid var(--line); font-size: 12px;
     }
     .hidden { display: none !important; }
+    details.custom-voice {
+      margin-top: 16px; border: 1px solid var(--line); border-radius: 14px;
+      background: #0d1525; overflow: hidden;
+    }
+    details.custom-voice summary {
+      cursor: pointer; padding: 13px 14px; font-size: 13px; font-weight: 800;
+      color: var(--text); list-style: none;
+    }
+    details.custom-voice summary::-webkit-details-marker { display: none; }
+    details.custom-voice summary::after { content: '+'; float: right; color: var(--accent); }
+    details.custom-voice[open] summary::after { content: '−'; }
+    .custom-body { padding: 0 14px 14px; }
+    .custom-body .mini { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 4px 0 12px; }
+    .consent-phrase {
+      padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px;
+      background: #101a2c; color: var(--text); font-size: 12px; line-height: 1.5; margin: 8px 0 12px;
+    }
+    .custom-body input[type="file"] { height: auto; padding: 9px; font-size: 12px; }
+    .custom-body button { margin-top: 10px; padding: 11px 13px; font-size: 12px; }
+    .custom-status { min-height: 18px; margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .custom-id { word-break: break-all; color: var(--good); }
     @media (max-width: 800px) {
       .grid { grid-template-columns: 1fr; }
       .wrap { padding-top: 28px; }
@@ -201,6 +222,40 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           </select>
         </div>
 
+        <details class="custom-voice">
+          <summary>Create Custom Voice</summary>
+          <div class="custom-body">
+            <p class="mini">Requires OpenAI custom-voice access. The consent recording and sample must be the same speaker. This app sends uploads through your authenticated server; your API key remains hidden.</p>
+
+            <label>English consent phrase</label>
+            <div class="consent-phrase">I am the owner of this voice and I consent to OpenAI using this voice to create a synthetic voice model.</div>
+
+            <label for="consentName">Consent name</label>
+            <input id="consentName" type="text" value="story_voice_consent" maxlength="80">
+
+            <div class="field">
+              <label for="consentFile">Consent recording</label>
+              <input id="consentFile" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/flac,audio/webm,video/mp4,audio/mp4">
+              <p class="mini">Record only the exact phrase above. Maximum 30 seconds. For this Vercel app, keep the file under 4 MB.</p>
+              <button id="uploadConsent" type="button">Upload consent</button>
+              <div id="consentStatus" class="custom-status" aria-live="polite"></div>
+            </div>
+
+            <div class="field">
+              <label for="customVoiceName">Custom voice name</label>
+              <input id="customVoiceName" type="text" value="Story Narrator" maxlength="80">
+            </div>
+
+            <div class="field">
+              <label for="sampleFile">Voice sample</label>
+              <input id="sampleFile" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/flac,audio/webm,video/mp4,audio/mp4">
+              <p class="mini">Use 10–30 seconds of clean speech. OpenAI requires at least 5 seconds of actual speech. Keep the file under 4 MB in this app.</p>
+              <button id="createVoice" type="button">Create custom voice</button>
+              <div id="voiceCreateStatus" class="custom-status" aria-live="polite"></div>
+            </div>
+          </div>
+        </details>
+
         <div class="field">
           <label for="speed">Speed</label>
           <input id="speed" type="number" value="0.95" min="0.25" max="4" step="0.01" inputmode="decimal">
@@ -252,6 +307,14 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const output = document.getElementById('output');
     const audio = document.getElementById('audio');
     const download = document.getElementById('download');
+    const consentName = document.getElementById('consentName');
+    const consentFile = document.getElementById('consentFile');
+    const uploadConsent = document.getElementById('uploadConsent');
+    const consentStatus = document.getElementById('consentStatus');
+    const customVoiceName = document.getElementById('customVoiceName');
+    const sampleFile = document.getElementById('sampleFile');
+    const createVoice = document.getElementById('createVoice');
+    const voiceCreateStatus = document.getElementById('voiceCreateStatus');
     const authGate = document.getElementById('authGate');
     const loginForm = document.getElementById('loginForm');
     const appPassword = document.getElementById('appPassword');
@@ -261,6 +324,66 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     let objectUrl = null;
 
     const STORAGE_KEY = 'storyVoiceStudioStateV1';
+    const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+
+    function addCustomVoiceOption(id, name, selectIt = true) {
+      if (!id || !/^voice_[A-Za-z0-9_-]+$/.test(id)) return;
+      let option = [...voice.options].find(o => o.value === id);
+      if (!option) {
+        option = document.createElement('option');
+        option.value = id;
+        option.dataset.custom = 'true';
+        option.dataset.voiceName = name || id;
+        option.textContent = 'Custom: ' + (name || id);
+        voice.appendChild(option);
+      }
+      if (selectIt) voice.value = id;
+    }
+
+    function validateUpload(file, label) {
+      if (!file) throw new Error('Choose a ' + label + ' file first.');
+      if (file.size > MAX_UPLOAD_BYTES) throw new Error(label + ' must be under 4 MB for this Vercel app.');
+      return file;
+    }
+
+    async function audioDuration(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const el = document.createElement('audio');
+        el.preload = 'metadata';
+        el.onloadedmetadata = () => {
+          const duration = el.duration;
+          URL.revokeObjectURL(url);
+          resolve(duration);
+        };
+        el.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Could not read the audio duration.'));
+        };
+        el.src = url;
+      });
+    }
+
+    async function uploadRawAudio(endpoint, file, headers = {}) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(file.name || 'audio'),
+          'X-File-Type': file.type || 'application/octet-stream',
+          ...headers
+        },
+        body: file
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Upload failed.');
+      return data;
+    }
 
     function saveState() {
       try {
@@ -269,7 +392,11 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           instructions: instructions.value,
           voice: voice.value,
           speed: speed.value,
-          format: format.value
+          format: format.value,
+          consentId: consentStatus.dataset.consentId || '',
+          customVoices: [...voice.options]
+            .filter(o => o.dataset.custom === 'true')
+            .map(o => ({ id: o.value, name: o.dataset.voiceName || o.textContent.replace(/^Custom: /, '') }))
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       } catch (_) {}
@@ -283,6 +410,15 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
         if (typeof state.script === 'string') script.value = state.script;
         if (typeof state.instructions === 'string') instructions.value = state.instructions;
+
+        if (Array.isArray(state.customVoices)) {
+          state.customVoices.forEach(item => addCustomVoiceOption(item.id, item.name, false));
+        }
+        if (typeof state.consentId === 'string' && state.consentId) {
+          consentStatus.dataset.consentId = state.consentId;
+          consentStatus.innerHTML = 'Consent ready: <span class="custom-id">' + escapeHtml(state.consentId) + '</span>';
+        }
+
         if (typeof state.voice === 'string' && [...voice.options].some(o => o.value === state.voice || o.text === state.voice)) {
           voice.value = state.voice;
         }
@@ -369,6 +505,66 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       try { await fetch('/api/logout', { method: 'POST' }); } catch (_) {}
       await refreshAuth();
       appPassword.focus();
+    });
+
+    uploadConsent.addEventListener('click', async () => {
+      consentStatus.textContent = '';
+      uploadConsent.disabled = true;
+      uploadConsent.textContent = 'Uploading…';
+      try {
+        const file = validateUpload(consentFile.files[0], 'consent recording');
+        const duration = await audioDuration(file);
+        if (duration > 30.5) throw new Error('Consent recording must be 30 seconds or less.');
+
+        const data = await uploadRawAudio('/api/voice-consent', file, {
+          'X-Consent-Name': encodeURIComponent((consentName.value || 'story_voice_consent').trim()),
+          'X-Consent-Language': 'en'
+        });
+
+        const id = data.id || data.consent_id;
+        if (!id) throw new Error('OpenAI did not return a consent ID.');
+        consentStatus.dataset.consentId = id;
+        consentStatus.innerHTML = 'Consent ready: <span class="custom-id">' + escapeHtml(id) + '</span>';
+        saveState();
+      } catch (error) {
+        consentStatus.textContent = error.message || 'Consent upload failed.';
+      } finally {
+        uploadConsent.disabled = false;
+        uploadConsent.textContent = 'Upload consent';
+      }
+    });
+
+    createVoice.addEventListener('click', async () => {
+      voiceCreateStatus.textContent = '';
+      createVoice.disabled = true;
+      createVoice.textContent = 'Creating…';
+      try {
+        const consentId = consentStatus.dataset.consentId || '';
+        if (!consentId) throw new Error('Upload the consent recording first.');
+
+        const file = validateUpload(sampleFile.files[0], 'voice sample');
+        const duration = await audioDuration(file);
+        if (duration < 5) throw new Error('Voice sample must contain at least 5 seconds of speech.');
+        if (duration > 30.5) throw new Error('Voice sample must be 30 seconds or less.');
+
+        const name = (customVoiceName.value || 'Story Narrator').trim();
+        const data = await uploadRawAudio('/api/custom-voice', file, {
+          'X-Voice-Name': encodeURIComponent(name),
+          'X-Consent-Id': consentId
+        });
+
+        const id = data.id || data.voice_id;
+        if (!id) throw new Error('OpenAI did not return a custom voice ID.');
+
+        addCustomVoiceOption(id, name, true);
+        voiceCreateStatus.innerHTML = 'Created and selected: <span class="custom-id">' + escapeHtml(id) + '</span>';
+        saveState();
+      } catch (error) {
+        voiceCreateStatus.textContent = error.message || 'Custom voice creation failed.';
+      } finally {
+        createVoice.disabled = false;
+        createVoice.textContent = 'Create custom voice';
+      }
     });
 
     script.addEventListener('input', () => {
