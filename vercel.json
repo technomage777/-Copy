@@ -17,6 +17,9 @@
     },
     "api/chatterbox-status.js": {
       "maxDuration": 60
+    },
+    "api/chatterbox-audio.js": {
+      "maxDuration": 60
     }
   }
-}\n
+}
