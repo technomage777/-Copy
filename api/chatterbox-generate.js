@@ -19,20 +19,21 @@ module.exports = async function handler(req, res) {
 
   const body = req.body || {};
   const input = typeof body.input === 'string' ? body.input.trim() : '';
-  const referenceUrl = typeof body.reference_url === 'string' ? body.reference_url : '';
+  const referenceDataUri = typeof body.reference_data_uri === 'string' ? body.reference_data_uri : '';
 
   if (!input) return res.status(400).json({ error: 'Narration text is required.' });
   if (input.length > 4096) return res.status(400).json({ error: 'Narration is limited to 4096 characters in this app.' });
 
-  let parsed;
-  try { parsed = new URL(referenceUrl); } catch (_) {}
-  if (!parsed || parsed.protocol !== 'https:' || parsed.hostname !== 'api.replicate.com' || !parsed.pathname.startsWith('/v1/files/')) {
-    return res.status(400).json({ error: 'Upload a valid Chatterbox reference voice first.' });
+  if (!/^data:audio\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/.test(referenceDataUri)) {
+    return res.status(400).json({ error: 'Save a valid Chatterbox reference voice first.' });
+  }
+  if (referenceDataUri.length > 3.6 * 1024 * 1024) {
+    return res.status(413).json({ error: 'Reference voice is too large. Keep it under 2.5 MB.' });
   }
 
   const modelInput = {
     prompt: input,
-    audio_prompt: referenceUrl,
+    audio_prompt: referenceDataUri,
     exaggeration: numberInRange(body.exaggeration, 0.25, 2, 0.5),
     cfg_weight: numberInRange(body.cfg_weight, 0.2, 1, 0.4),
     temperature: numberInRange(body.temperature, 0.05, 5, 0.8),
