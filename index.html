@@ -235,7 +235,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
             <div class="field">
               <label for="consentFile">Consent recording</label>
-              <input id="consentFile" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/flac,audio/webm,video/mp4,audio/mp4">
+              <input id="consentFile" type="file" accept=".m4a,audio/m4a,audio/x-m4a,audio/mp4,audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/flac,audio/webm,video/mp4">
               <p class="mini">Record only the exact phrase above. Maximum 30 seconds. For this Vercel app, keep the file under 4 MB.</p>
               <button id="uploadConsent" type="button">Upload consent</button>
               <div id="consentStatus" class="custom-status" aria-live="polite"></div>
@@ -248,7 +248,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
             <div class="field">
               <label for="sampleFile">Voice sample</label>
-              <input id="sampleFile" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/flac,audio/webm,video/mp4,audio/mp4">
+              <input id="sampleFile" type="file" accept=".m4a,audio/m4a,audio/x-m4a,audio/mp4,audio/mpeg,audio/wav,audio/ogg,audio/aac,audio/flac,audio/webm,video/mp4">
               <p class="mini">Use 10–30 seconds of clean speech. OpenAI requires at least 5 seconds of actual speech. Keep the file under 4 MB in this app.</p>
               <button id="createVoice" type="button">Create custom voice</button>
               <div id="voiceCreateStatus" class="custom-status" aria-live="polite"></div>
