@@ -3,7 +3,7 @@ const { isAuthorized } = require('./_auth');
 const MAX_BYTES = 4 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   'audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/ogg','audio/aac',
-  'audio/flac','audio/webm','video/mp4','audio/mp4','application/octet-stream'
+  'audio/flac','audio/webm','video/mp4','audio/mp4','audio/m4a','audio/x-m4a','application/octet-stream'
 ]);
 
 function decodeHeader(value, fallback = '') {
