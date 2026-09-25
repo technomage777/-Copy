@@ -1,0 +1,4 @@
+chatterbox-tts
+fastapi
+uvicorn[standard]
+numpy
