@@ -82,6 +82,24 @@
     .download { display: inline-flex; text-decoration: none; color: #081220; background: var(--good); padding: 10px 14px; border-radius: 10px; font-weight: 800; font-size: 13px; }
     .note { color: var(--muted); font-size: 12px; line-height: 1.55; margin-top: 14px; }
     .model { color: var(--muted); font-size: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #0d1525; }
+    .auth-gate {
+      position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
+      background: rgba(4, 8, 18, .88); backdrop-filter: blur(18px); padding: 20px;
+    }
+    .auth-box {
+      width: min(420px, 100%); background: #121a2b; border: 1px solid var(--line);
+      border-radius: 22px; padding: 26px; box-shadow: 0 30px 80px rgba(0,0,0,.35);
+    }
+    .auth-box h2 { margin: 0 0 8px; font-size: 28px; letter-spacing: -.03em; }
+    .auth-box p { color: var(--muted); margin: 0 0 18px; line-height: 1.55; font-size: 14px; }
+    .auth-box button { margin-top: 12px; }
+    .auth-error { color: var(--bad); min-height: 20px; font-size: 13px; margin-top: 10px; }
+    .top-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .logout {
+      width: auto; margin: 0; padding: 8px 12px; background: #1c2940; color: var(--text);
+      border: 1px solid var(--line); font-size: 12px;
+    }
+    .hidden { display: none !important; }
     @media (max-width: 800px) {
       .grid { grid-template-columns: 1fr; }
       .wrap { padding-top: 28px; }
@@ -89,7 +107,20 @@
   </style>
 </head>
 <body>
+  <div id="authGate" class="auth-gate">
+    <form id="loginForm" class="auth-box">
+      <div class="eyebrow">Private Access</div>
+      <h2>Story Voice Studio</h2>
+      <p>Enter the app password to continue.</p>
+      <label for="appPassword">Password</label>
+      <input id="appPassword" type="password" autocomplete="current-password" required>
+      <button id="loginButton" type="submit">Unlock Studio</button>
+      <div id="authError" class="auth-error" aria-live="polite"></div>
+    </form>
+  </div>
+
   <main class="wrap">
+    <div class="top-actions"><button id="logoutButton" class="logout hidden" type="button">Log out</button></div>
     <header>
       <div class="eyebrow">OpenAI TTS</div>
       <h1>Story Voice Studio</h1>
@@ -221,6 +252,12 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const output = document.getElementById('output');
     const audio = document.getElementById('audio');
     const download = document.getElementById('download');
+    const authGate = document.getElementById('authGate');
+    const loginForm = document.getElementById('loginForm');
+    const appPassword = document.getElementById('appPassword');
+    const loginButton = document.getElementById('loginButton');
+    const authError = document.getElementById('authError');
+    const logoutButton = document.getElementById('logoutButton');
     let objectUrl = null;
 
     function countWords(text) {
@@ -255,6 +292,49 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         sceneList.appendChild(row);
       });
     }
+
+    async function refreshAuth() {
+      try {
+        const response = await fetch('/api/auth-status', { cache: 'no-store' });
+        const data = await response.json();
+        const loggedIn = Boolean(data && data.authenticated);
+        authGate.classList.toggle('hidden', loggedIn);
+        logoutButton.classList.toggle('hidden', !loggedIn);
+        if (loggedIn) appPassword.value = '';
+      } catch (_) {
+        authGate.classList.remove('hidden');
+        logoutButton.classList.add('hidden');
+      }
+    }
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      authError.textContent = '';
+      loginButton.disabled = true;
+      loginButton.textContent = 'Checking…';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: appPassword.value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Incorrect password.');
+        await refreshAuth();
+      } catch (error) {
+        authError.textContent = error.message || 'Login failed.';
+      } finally {
+        loginButton.disabled = false;
+        loginButton.textContent = 'Unlock Studio';
+      }
+    });
+
+    logoutButton.addEventListener('click', async () => {
+      try { await fetch('/api/logout', { method: 'POST' }); } catch (_) {}
+      await refreshAuth();
+      appPassword.focus();
+    });
 
     script.addEventListener('input', refreshStats);
     document.querySelectorAll('[data-speed]').forEach(btn => {
@@ -317,6 +397,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     });
 
     refreshStats();
+    refreshAuth();
   </script>
 </body>
 </html>
