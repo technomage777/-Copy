@@ -121,7 +121,31 @@
     .custom-body button { margin-top: 10px; padding: 11px 13px; font-size: 12px; }
     .custom-status { min-height: 18px; margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.45; }
     .custom-id { word-break: break-all; color: var(--good); }
+    .polisher {
+      margin-top: 18px; border: 1px solid var(--line); border-radius: 14px;
+      background: #0d1525; overflow: hidden;
+    }
+    .polisher summary {
+      cursor: pointer; padding: 13px 14px; font-size: 13px; font-weight: 800;
+      list-style: none;
+    }
+    .polisher summary::-webkit-details-marker { display: none; }
+    .polisher summary::after { content: '+'; float: right; color: var(--accent); }
+    .polisher[open] summary::after { content: '−'; }
+    .polisher-body { padding: 0 14px 14px; }
+    .polish-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .polish-grid .field { margin-top: 0; }
+    .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 14px; }
+    .preset-row button {
+      width: auto; margin: 0; padding: 8px 10px; background: #1c2940;
+      color: var(--text); border: 1px solid var(--line); font-size: 11px; font-weight: 750;
+    }
+    .polish-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .polish-actions button { margin-top: 12px; }
+    .secondary-button { background: #1c2940; color: var(--text); border: 1px solid var(--line); }
+    .polished-output { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
     @media (max-width: 800px) {
+      .polish-grid, .polish-actions { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .wrap { padding-top: 28px; }
     }
@@ -380,7 +404,91 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           <a id="download" class="download" href="#">Download audio</a>
         </div>
 
-        <p class="note">The API key stays on Vercel as an environment variable and is never sent to the browser. Generated speech is AI-generated.</p>
+        <details id="polisher" class="polisher" open>
+          <summary>Podcast Voice Polisher</summary>
+          <div class="polisher-body">
+            <p class="note">Polish the latest generated narration, or choose an older audio file. Processing happens in your browser and downloads as WAV.</p>
+
+            <div class="field">
+              <label for="polishFile">Optional audio file</label>
+              <input id="polishFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm">
+            </div>
+
+            <div class="preset-row">
+              <button type="button" data-polish-preset="crisp">Podcast Crisp</button>
+              <button type="button" data-polish-preset="warm">Warm Narrator</button>
+              <button type="button" data-polish-preset="gentle">Gentle Clean</button>
+              <button type="button" data-polish-preset="broadcast">Broadcast</button>
+            </div>
+
+            <div class="polish-grid">
+              <div class="field">
+                <label for="polishHighpass">Rumble Cut (Hz)</label>
+                <input id="polishHighpass" type="number" min="20" max="180" step="5" value="75">
+              </div>
+              <div class="field">
+                <label for="polishBody">Body / Warmth (dB)</label>
+                <input id="polishBody" type="number" min="-6" max="6" step="0.5" value="0.5">
+              </div>
+              <div class="field">
+                <label for="polishMud">Mud Control (dB)</label>
+                <input id="polishMud" type="number" min="-8" max="4" step="0.5" value="-2">
+              </div>
+              <div class="field">
+                <label for="polishPresence">Presence / Clarity (dB)</label>
+                <input id="polishPresence" type="number" min="-4" max="8" step="0.5" value="2.5">
+              </div>
+              <div class="field">
+                <label for="polishSibilance">Sibilance Cut (dB)</label>
+                <input id="polishSibilance" type="number" min="-8" max="0" step="0.5" value="-1.5">
+              </div>
+              <div class="field">
+                <label for="polishAir">Air / Shine (dB)</label>
+                <input id="polishAir" type="number" min="-4" max="8" step="0.5" value="1.5">
+              </div>
+              <div class="field">
+                <label for="polishThreshold">Compression Threshold (dB)</label>
+                <input id="polishThreshold" type="number" min="-40" max="-6" step="1" value="-20">
+              </div>
+              <div class="field">
+                <label for="polishRatio">Compression Ratio</label>
+                <input id="polishRatio" type="number" min="1" max="8" step="0.25" value="3">
+              </div>
+              <div class="field">
+                <label for="polishAttack">Attack (ms)</label>
+                <input id="polishAttack" type="number" min="1" max="100" step="1" value="10">
+              </div>
+              <div class="field">
+                <label for="polishRelease">Release (ms)</label>
+                <input id="polishRelease" type="number" min="50" max="800" step="10" value="180">
+              </div>
+              <div class="field">
+                <label for="polishMix">Polish Mix (%)</label>
+                <input id="polishMix" type="number" min="0" max="100" step="5" value="100">
+              </div>
+              <div class="field">
+                <label for="polishPeak">Final Peak (dBFS)</label>
+                <input id="polishPeak" type="number" min="-6" max="-0.1" step="0.1" value="-1">
+              </div>
+            </div>
+
+            <p class="note">Defaults are tuned for a clear narration voice: remove low rumble, reduce boxiness, add presence and air, soften harsh S sounds, compress gently, then normalize the peak.</p>
+
+            <div class="polish-actions">
+              <button id="applyPolish" type="button">Polish Voice</button>
+              <button id="resetPolish" class="secondary-button" type="button">Reset to Podcast Crisp</button>
+            </div>
+            <div id="polishStatus" class="status" aria-live="polite"></div>
+
+            <div id="polishedOutput" class="polished-output hidden">
+              <label>Polished audio</label>
+              <audio id="polishedAudio" controls></audio>
+              <a id="polishedDownload" class="download" href="#" download="story-narration-polished.wav">Download polished WAV</a>
+            </div>
+          </div>
+        </details>
+
+        <p class="note">The API key stays on Vercel as an environment variable and is never sent to the browser. Generated speech is AI-generated. Podcast polishing runs locally in your browser.</p>
       </aside>
     </div>
   </main>
@@ -424,6 +532,25 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const output = document.getElementById('output');
     const audio = document.getElementById('audio');
     const download = document.getElementById('download');
+    const polishFile = document.getElementById('polishFile');
+    const polishHighpass = document.getElementById('polishHighpass');
+    const polishBody = document.getElementById('polishBody');
+    const polishMud = document.getElementById('polishMud');
+    const polishPresence = document.getElementById('polishPresence');
+    const polishSibilance = document.getElementById('polishSibilance');
+    const polishAir = document.getElementById('polishAir');
+    const polishThreshold = document.getElementById('polishThreshold');
+    const polishRatio = document.getElementById('polishRatio');
+    const polishAttack = document.getElementById('polishAttack');
+    const polishRelease = document.getElementById('polishRelease');
+    const polishMix = document.getElementById('polishMix');
+    const polishPeak = document.getElementById('polishPeak');
+    const applyPolish = document.getElementById('applyPolish');
+    const resetPolish = document.getElementById('resetPolish');
+    const polishStatus = document.getElementById('polishStatus');
+    const polishedOutput = document.getElementById('polishedOutput');
+    const polishedAudio = document.getElementById('polishedAudio');
+    const polishedDownload = document.getElementById('polishedDownload');
     const consentName = document.getElementById('consentName');
     const consentFile = document.getElementById('consentFile');
     const uploadConsent = document.getElementById('uploadConsent');
@@ -439,6 +566,8 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const authError = document.getElementById('authError');
     const logoutButton = document.getElementById('logoutButton');
     let objectUrl = null;
+    let generatedBlob = null;
+    let polishedObjectUrl = null;
 
     const STORAGE_KEY = 'storyVoiceStudioStateV1';
     const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -673,6 +802,192 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       throw new Error('Chatterbox generation is taking unusually long. Please try again.');
     }
 
+    const POLISH_PRESETS = {
+      crisp: {
+        highpass: 75, body: 0.5, mud: -2, presence: 2.5, sibilance: -1.5, air: 1.5,
+        threshold: -20, ratio: 3, attack: 10, release: 180, mix: 100, peak: -1
+      },
+      warm: {
+        highpass: 70, body: 1.5, mud: -1, presence: 1, sibilance: -1, air: 0.5,
+        threshold: -18, ratio: 2.5, attack: 15, release: 220, mix: 100, peak: -1
+      },
+      gentle: {
+        highpass: 65, body: 0, mud: -1, presence: 1, sibilance: -0.5, air: 0.75,
+        threshold: -16, ratio: 2, attack: 15, release: 200, mix: 100, peak: -1
+      },
+      broadcast: {
+        highpass: 80, body: 0, mud: -2.5, presence: 3, sibilance: -2, air: 2,
+        threshold: -24, ratio: 4, attack: 8, release: 150, mix: 100, peak: -0.8
+      }
+    };
+
+    function setPolishPreset(name) {
+      const p = POLISH_PRESETS[name] || POLISH_PRESETS.crisp;
+      polishHighpass.value = p.highpass;
+      polishBody.value = p.body;
+      polishMud.value = p.mud;
+      polishPresence.value = p.presence;
+      polishSibilance.value = p.sibilance;
+      polishAir.value = p.air;
+      polishThreshold.value = p.threshold;
+      polishRatio.value = p.ratio;
+      polishAttack.value = p.attack;
+      polishRelease.value = p.release;
+      polishMix.value = p.mix;
+      polishPeak.value = p.peak;
+      saveState();
+    }
+
+    function clampNumber(input, min, max, fallback) {
+      const n = Number(input.value);
+      return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+    }
+
+    async function decodeAudioBlob(blob) {
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) throw new Error('This browser does not support audio processing.');
+      const ctx = new Context();
+      try {
+        const bytes = await blob.arrayBuffer();
+        return await ctx.decodeAudioData(bytes.slice(0));
+      } finally {
+        try { await ctx.close(); } catch (_) {}
+      }
+    }
+
+    function normalizeAudioBuffer(buffer, targetDb) {
+      let peak = 0;
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        for (let i = 0; i < data.length; i++) {
+          const v = Math.abs(data[i]);
+          if (v > peak) peak = v;
+        }
+      }
+      if (peak <= 0) return;
+      const target = Math.pow(10, targetDb / 20);
+      const gain = target / peak;
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        for (let i = 0; i < data.length; i++) data[i] *= gain;
+      }
+    }
+
+    function audioBufferToWav(buffer) {
+      const channels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const frames = buffer.length;
+      const bytesPerSample = 2;
+      const blockAlign = channels * bytesPerSample;
+      const dataSize = frames * blockAlign;
+      const out = new ArrayBuffer(44 + dataSize);
+      const view = new DataView(out);
+
+      const writeText = (offset, text) => {
+        for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+      };
+      writeText(0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeText(8, 'WAVE');
+      writeText(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, channels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * blockAlign, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, 16, true);
+      writeText(36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      const channelData = [];
+      for (let c = 0; c < channels; c++) channelData.push(buffer.getChannelData(c));
+
+      let offset = 44;
+      for (let i = 0; i < frames; i++) {
+        for (let c = 0; c < channels; c++) {
+          const sample = Math.max(-1, Math.min(1, channelData[c][i]));
+          view.setInt16(offset, sample < 0 ? sample * 32768 : sample * 32767, true);
+          offset += 2;
+        }
+      }
+      return new Blob([out], { type: 'audio/wav' });
+    }
+
+    async function polishAudio(sourceBlob) {
+      const decoded = await decodeAudioBlob(sourceBlob);
+      const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (!Offline) throw new Error('This browser does not support offline audio processing.');
+
+      const ctx = new Offline(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+      const source = ctx.createBufferSource();
+      source.buffer = decoded;
+
+      const highpass = ctx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = clampNumber(polishHighpass, 20, 180, 75);
+      highpass.Q.value = 0.707;
+
+      const body = ctx.createBiquadFilter();
+      body.type = 'lowshelf';
+      body.frequency.value = 150;
+      body.gain.value = clampNumber(polishBody, -6, 6, 0.5);
+
+      const mud = ctx.createBiquadFilter();
+      mud.type = 'peaking';
+      mud.frequency.value = 280;
+      mud.Q.value = 1.05;
+      mud.gain.value = clampNumber(polishMud, -8, 4, -2);
+
+      const presence = ctx.createBiquadFilter();
+      presence.type = 'peaking';
+      presence.frequency.value = 3500;
+      presence.Q.value = 0.9;
+      presence.gain.value = clampNumber(polishPresence, -4, 8, 2.5);
+
+      const sibilance = ctx.createBiquadFilter();
+      sibilance.type = 'peaking';
+      sibilance.frequency.value = 6500;
+      sibilance.Q.value = 1.8;
+      sibilance.gain.value = clampNumber(polishSibilance, -8, 0, -1.5);
+
+      const air = ctx.createBiquadFilter();
+      air.type = 'highshelf';
+      air.frequency.value = 10000;
+      air.gain.value = clampNumber(polishAir, -4, 8, 1.5);
+
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = clampNumber(polishThreshold, -40, -6, -20);
+      compressor.knee.value = 12;
+      compressor.ratio.value = clampNumber(polishRatio, 1, 8, 3);
+      compressor.attack.value = clampNumber(polishAttack, 1, 100, 10) / 1000;
+      compressor.release.value = clampNumber(polishRelease, 50, 800, 180) / 1000;
+
+      const wet = ctx.createGain();
+      const dry = ctx.createGain();
+      const mix = clampNumber(polishMix, 0, 100, 100) / 100;
+      wet.gain.value = mix;
+      dry.gain.value = 1 - mix;
+
+      source.connect(highpass);
+      highpass.connect(body);
+      body.connect(mud);
+      mud.connect(presence);
+      presence.connect(sibilance);
+      sibilance.connect(air);
+      air.connect(compressor);
+      compressor.connect(wet);
+      wet.connect(ctx.destination);
+
+      source.connect(dry);
+      dry.connect(ctx.destination);
+
+      source.start(0);
+      const rendered = await ctx.startRendering();
+      normalizeAudioBuffer(rendered, clampNumber(polishPeak, -6, -0.1, -1));
+      return audioBufferToWav(rendered);
+    }
+
     async function saveState() {
       try {
         const state = {
@@ -689,6 +1004,20 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           topK: topK.value,
           repetitionPenalty: repetitionPenalty.value,
           localServerUrl: localServerUrl.value,
+          polish: {
+            highpass: polishHighpass.value,
+            body: polishBody.value,
+            mud: polishMud.value,
+            presence: polishPresence.value,
+            sibilance: polishSibilance.value,
+            air: polishAir.value,
+            threshold: polishThreshold.value,
+            ratio: polishRatio.value,
+            attack: polishAttack.value,
+            release: polishRelease.value,
+            mix: polishMix.value,
+            peak: polishPeak.value
+          },
           chatterboxRefName: chatterboxRefStatus.dataset.refName || '',
           voice: voice.value,
           speed: speed.value,
@@ -721,6 +1050,20 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         if (state.topK !== undefined) topK.value = state.topK;
         if (state.repetitionPenalty !== undefined) repetitionPenalty.value = state.repetitionPenalty;
         if (typeof state.localServerUrl === 'string' && state.localServerUrl) localServerUrl.value = state.localServerUrl;
+        if (state.polish && typeof state.polish === 'object') {
+          if (state.polish.highpass !== undefined) polishHighpass.value = state.polish.highpass;
+          if (state.polish.body !== undefined) polishBody.value = state.polish.body;
+          if (state.polish.mud !== undefined) polishMud.value = state.polish.mud;
+          if (state.polish.presence !== undefined) polishPresence.value = state.polish.presence;
+          if (state.polish.sibilance !== undefined) polishSibilance.value = state.polish.sibilance;
+          if (state.polish.air !== undefined) polishAir.value = state.polish.air;
+          if (state.polish.threshold !== undefined) polishThreshold.value = state.polish.threshold;
+          if (state.polish.ratio !== undefined) polishRatio.value = state.polish.ratio;
+          if (state.polish.attack !== undefined) polishAttack.value = state.polish.attack;
+          if (state.polish.release !== undefined) polishRelease.value = state.polish.release;
+          if (state.polish.mix !== undefined) polishMix.value = state.polish.mix;
+          if (state.polish.peak !== undefined) polishPeak.value = state.polish.peak;
+        }
         if (typeof state.chatterboxRefName === 'string' && state.chatterboxRefName) {
           chatterboxRefStatus.dataset.refName = state.chatterboxRefName;
           chatterboxRefStatus.textContent = 'Reference voice saved: ' + state.chatterboxRefName;
@@ -926,6 +1269,53 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       }
     });
 
+    document.querySelectorAll('[data-polish-preset]').forEach(btn => {
+      btn.addEventListener('click', () => setPolishPreset(btn.dataset.polishPreset));
+    });
+
+    [
+      polishHighpass, polishBody, polishMud, polishPresence, polishSibilance, polishAir,
+      polishThreshold, polishRatio, polishAttack, polishRelease, polishMix, polishPeak
+    ].forEach(control => control.addEventListener('input', saveState));
+
+    resetPolish.addEventListener('click', () => {
+      setPolishPreset('crisp');
+      polishStatus.textContent = 'Reset to Podcast Crisp defaults.';
+    });
+
+    applyPolish.addEventListener('click', async () => {
+      polishStatus.textContent = '';
+      polishedOutput.classList.add('hidden');
+      applyPolish.disabled = true;
+      applyPolish.textContent = 'Polishing…';
+
+      try {
+        const sourceBlob = polishFile.files && polishFile.files[0]
+          ? polishFile.files[0]
+          : generatedBlob;
+
+        if (!sourceBlob) {
+          throw new Error('Generate narration first, or choose an audio file to polish.');
+        }
+
+        polishStatus.textContent = 'Applying EQ, compression, and final normalization…';
+        const polishedBlob = await polishAudio(sourceBlob);
+
+        if (polishedObjectUrl) URL.revokeObjectURL(polishedObjectUrl);
+        polishedObjectUrl = URL.createObjectURL(polishedBlob);
+        polishedAudio.src = polishedObjectUrl;
+        polishedDownload.href = polishedObjectUrl;
+        polishedDownload.download = 'story-narration-polished.wav';
+        polishedOutput.classList.remove('hidden');
+        polishStatus.textContent = 'Podcast polish finished.';
+      } catch (error) {
+        polishStatus.textContent = error.message || 'Could not polish this audio file.';
+      } finally {
+        applyPolish.disabled = false;
+        applyPolish.textContent = 'Polish Voice';
+      }
+    });
+
     script.addEventListener('input', () => {
       refreshStats();
       saveState();
@@ -1006,6 +1396,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
             blob = await audioResponse.blob();
           }
 
+          generatedBlob = blob;
           if (objectUrl) URL.revokeObjectURL(objectUrl);
           objectUrl = URL.createObjectURL(blob);
           audio.src = objectUrl;
@@ -1043,6 +1434,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           }
 
           const blob = await response.blob();
+          generatedBlob = blob;
           if (objectUrl) URL.revokeObjectURL(objectUrl);
           objectUrl = URL.createObjectURL(blob);
           audio.src = objectUrl;
