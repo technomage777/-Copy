@@ -183,8 +183,12 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         <div class="field">
           <label for="format">Audio format</label>
           <select id="format">
-            <option value="mp3" selected>MP3</option>
-            <option value="wav">WAV</option>
+            <option value="mp3" selected>MP3 — general use</option>
+            <option value="wav">WAV — uncompressed</option>
+            <option value="flac">FLAC — lossless compressed</option>
+            <option value="aac">AAC — good for video/mobile</option>
+            <option value="opus">Opus — efficient/streaming</option>
+            <option value="pcm">PCM — raw 24 kHz audio</option>
           </select>
         </div>
 
@@ -301,7 +305,8 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         objectUrl = URL.createObjectURL(blob);
         audio.src = objectUrl;
         download.href = objectUrl;
-        download.download = 'story-narration.' + format.value;
+        const extensions = { mp3: 'mp3', wav: 'wav', flac: 'flac', aac: 'aac', opus: 'opus', pcm: 'pcm' };
+        download.download = 'story-narration.' + (extensions[format.value] || format.value);
         output.style.display = 'block';
         status.textContent = 'Finished.';
       } catch (err) {
