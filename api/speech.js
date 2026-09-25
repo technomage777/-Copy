@@ -29,7 +29,8 @@ module.exports = async function handler(req, res) {
 
   if (!input) return res.status(400).json({ error: 'Narration text is required.' });
   if (input.length > 4096) return res.status(400).json({ error: 'Narration must be 4096 characters or fewer for one request.' });
-  if (!VOICES.has(voice)) return res.status(400).json({ error: 'Unsupported voice.' });
+  const isCustomVoice = /^voice_[A-Za-z0-9_-]+$/.test(voice);
+  if (!VOICES.has(voice) && !isCustomVoice) return res.status(400).json({ error: 'Unsupported voice.' });
   if (!FORMATS.has(format)) return res.status(400).json({ error: 'Unsupported output format.' });
   if (!Number.isFinite(speed) || speed < 0.25 || speed > 4) {
     return res.status(400).json({ error: 'Speed must be between 0.25 and 4.0.' });
@@ -44,7 +45,7 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini-tts',
-        voice,
+        voice: isCustomVoice ? { id: voice } : voice,
         input,
         instructions,
         response_format: format,
