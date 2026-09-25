@@ -22,7 +22,13 @@ module.exports = async function handler(req, res) {
   const referenceDataUri = typeof body.reference_data_uri === 'string' ? body.reference_data_uri : '';
 
   if (!input) return res.status(400).json({ error: 'Narration text is required.' });
-  if (input.length > 4096) return res.status(400).json({ error: 'Narration is limited to 4096 characters in this app.' });
+  const engine = body.engine === 'chatterbox_turbo' ? 'chatterbox_turbo' : 'chatterbox';
+  if (engine === 'chatterbox_turbo' && input.length > 500) {
+    return res.status(400).json({ error: 'Chatterbox Turbo allows a maximum of 500 characters per generation.' });
+  }
+  if (engine === 'chatterbox' && input.length > 4096) {
+    return res.status(400).json({ error: 'Narration is limited to 4096 characters in this app.' });
+  }
 
   if (!/^data:audio\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/.test(referenceDataUri)) {
     return res.status(400).json({ error: 'Save a valid Chatterbox reference voice first.' });
@@ -31,17 +37,31 @@ module.exports = async function handler(req, res) {
     return res.status(413).json({ error: 'Reference voice is too large. Keep it under 2.5 MB.' });
   }
 
-  const modelInput = {
-    prompt: input,
-    audio_prompt: referenceDataUri,
-    exaggeration: numberInRange(body.exaggeration, 0.25, 2, 0.5),
-    cfg_weight: numberInRange(body.cfg_weight, 0.2, 1, 0.4),
-    temperature: numberInRange(body.temperature, 0.05, 5, 0.8),
-    seed: Math.max(0, Math.floor(Number(body.seed) || 0))
-  };
+  const modelInput = engine === 'chatterbox_turbo'
+    ? {
+        text: input,
+        reference_audio: referenceDataUri,
+        temperature: numberInRange(body.turbo_temperature, 0.05, 2, 0.65),
+        top_p: numberInRange(body.top_p, 0.5, 1, 0.9),
+        top_k: Math.min(2000, Math.max(1, Math.floor(Number(body.top_k) || 1000))),
+        repetition_penalty: numberInRange(body.repetition_penalty, 1, 2, 1.2),
+        seed: Math.max(0, Math.floor(Number(body.turbo_seed) || 42))
+      }
+    : {
+        prompt: input,
+        audio_prompt: referenceDataUri,
+        exaggeration: numberInRange(body.exaggeration, 0.25, 2, 0.5),
+        cfg_weight: numberInRange(body.cfg_weight, 0.2, 1, 0.4),
+        temperature: numberInRange(body.temperature, 0.05, 5, 0.8),
+        seed: Math.max(0, Math.floor(Number(body.seed) || 42))
+      };
 
   try {
-    const upstream = await fetch('https://api.replicate.com/v1/models/resemble-ai/chatterbox/predictions', {
+    const modelPath = engine === 'chatterbox_turbo'
+      ? 'resemble-ai/chatterbox-turbo'
+      : 'resemble-ai/chatterbox';
+
+    const upstream = await fetch('https://api.replicate.com/v1/models/' + modelPath + '/predictions', {
       method: 'POST',
       headers: {
         Authorization: 'Bearer ' + process.env.REPLICATE_API_TOKEN,
