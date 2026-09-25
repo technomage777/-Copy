@@ -203,7 +203,8 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           <select id="engine">
             <option value="openai" selected>OpenAI TTS</option>
             <option value="chatterbox">Chatterbox Standard</option>
-            <option value="chatterbox_turbo">Chatterbox Turbo</option>
+            <option value="chatterbox_turbo">Chatterbox Turbo — Replicate</option>
+            <option value="chatterbox_turbo_local">Chatterbox Turbo — Local Mac</option>
           </select>
         </div>
 
@@ -333,6 +334,17 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
               <p class="mini">Turbo allows up to 500 characters per generation. Lower Top P can make delivery more focused and less variable.</p>
             </div>
 
+
+            <div id="localTurboControls" class="hidden">
+              <div class="field">
+                <label for="localServerUrl">Local Turbo server</label>
+                <input id="localServerUrl" type="text" value="http://127.0.0.1:8765" spellcheck="false">
+                <button id="testLocalServer" type="button">Test local engine</button>
+                <div id="localServerStatus" class="custom-status" aria-live="polite"></div>
+              </div>
+              <p class="mini">The local companion must be running on this Mac. Your reference audio and script stay on this computer for local generations.</p>
+            </div>
+
             <p class="mini">Chatterbox returns WAV. OpenAI voice instructions are not sent to Chatterbox. Standard uses Expressiveness/CFG; Turbo uses sampling controls.</p>
           </div>
         </details>
@@ -396,6 +408,10 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const topP = document.getElementById('topP');
     const topK = document.getElementById('topK');
     const repetitionPenalty = document.getElementById('repetitionPenalty');
+    const localTurboControls = document.getElementById('localTurboControls');
+    const localServerUrl = document.getElementById('localServerUrl');
+    const testLocalServer = document.getElementById('testLocalServer');
+    const localServerStatus = document.getElementById('localServerStatus');
     const exaggeration = document.getElementById('exaggeration');
     const cfgWeight = document.getElementById('cfgWeight');
     const temperature = document.getElementById('temperature');
@@ -520,12 +536,15 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
     function applyEngineUI() {
       const isStandard = engine.value === 'chatterbox';
-      const isTurbo = engine.value === 'chatterbox_turbo';
+      const isHostedTurbo = engine.value === 'chatterbox_turbo';
+      const isLocalTurbo = engine.value === 'chatterbox_turbo_local';
+      const isTurbo = isHostedTurbo || isLocalTurbo;
       const isChatterbox = isStandard || isTurbo;
 
-      modelLabel.textContent = isTurbo
-        ? 'resemble-ai/chatterbox-turbo'
-        : (isStandard ? 'resemble-ai/chatterbox' : 'gpt-4o-mini-tts');
+      modelLabel.textContent = isLocalTurbo
+        ? 'Chatterbox Turbo — Local MPS'
+        : (isHostedTurbo ? 'resemble-ai/chatterbox-turbo'
+        : (isStandard ? 'resemble-ai/chatterbox' : 'gpt-4o-mini-tts'));
 
       openaiVoiceField.classList.toggle('hidden', isChatterbox);
       openaiCustomVoice.classList.toggle('hidden', isChatterbox);
@@ -533,6 +552,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       chatterboxPanel.classList.toggle('hidden', !isChatterbox);
       chatterboxStandardControls.classList.toggle('hidden', !isStandard);
       chatterboxTurboControls.classList.toggle('hidden', !isTurbo);
+      localTurboControls.classList.toggle('hidden', !isLocalTurbo);
     }
 
     function fileToDataURL(file) {
@@ -570,6 +590,46 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function normalizedLocalUrl() {
+      return (localServerUrl.value || 'http://127.0.0.1:8765').trim().replace(/\/+$/, '');
+    }
+
+    async function callLocalTurbo(text, referenceDataUri) {
+      const endpoint = normalizedLocalUrl() + '/generate';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: text,
+          reference_data_uri: referenceDataUri,
+          temperature: Number(turboTemperature.value),
+          seed: Math.max(0, Math.floor(Number(turboSeed.value) || 0)),
+          top_p: Number(topP.value),
+          top_k: Math.max(1, Math.floor(Number(topK.value) || 1000)),
+          repetition_penalty: Number(repetitionPenalty.value),
+          norm_loudness: true
+        })
+      });
+
+      if (!response.ok) {
+        let message = 'Local Chatterbox generation failed.';
+        try {
+          const error = await response.json();
+          if (error && (error.error || error.detail)) message = error.error || error.detail;
+        } catch (_) {}
+        throw new Error(message);
+      }
+      return await response.blob();
+    }
+
+    async function checkLocalTurbo() {
+      const response = await fetch(normalizedLocalUrl() + '/health', { mode: 'cors', cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || data.detail || 'Local server did not respond.');
+      return data;
     }
 
     async function createChatterboxPrediction(text, referenceDataUri) {
@@ -628,6 +688,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           topP: topP.value,
           topK: topK.value,
           repetitionPenalty: repetitionPenalty.value,
+          localServerUrl: localServerUrl.value,
           chatterboxRefName: chatterboxRefStatus.dataset.refName || '',
           voice: voice.value,
           speed: speed.value,
@@ -649,7 +710,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
         if (typeof state.script === 'string') script.value = state.script;
         if (typeof state.instructions === 'string') instructions.value = state.instructions;
-        if (state.engine === 'openai' || state.engine === 'chatterbox' || state.engine === 'chatterbox_turbo') engine.value = state.engine;
+        if (state.engine === 'openai' || state.engine === 'chatterbox' || state.engine === 'chatterbox_turbo' || state.engine === 'chatterbox_turbo_local') engine.value = state.engine;
         if (state.exaggeration !== undefined) exaggeration.value = state.exaggeration;
         if (state.cfgWeight !== undefined) cfgWeight.value = state.cfgWeight;
         if (state.temperature !== undefined) temperature.value = state.temperature;
@@ -659,6 +720,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         if (state.topP !== undefined) topP.value = state.topP;
         if (state.topK !== undefined) topK.value = state.topK;
         if (state.repetitionPenalty !== undefined) repetitionPenalty.value = state.repetitionPenalty;
+        if (typeof state.localServerUrl === 'string' && state.localServerUrl) localServerUrl.value = state.localServerUrl;
         if (typeof state.chatterboxRefName === 'string' && state.chatterboxRefName) {
           chatterboxRefStatus.dataset.refName = state.chatterboxRefName;
           chatterboxRefStatus.textContent = 'Reference voice saved: ' + state.chatterboxRefName;
@@ -849,6 +911,20 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     topP.addEventListener('input', saveState);
     topK.addEventListener('input', saveState);
     repetitionPenalty.addEventListener('input', saveState);
+    localServerUrl.addEventListener('input', saveState);
+
+    testLocalServer.addEventListener('click', async () => {
+      localServerStatus.textContent = 'Checking local engine…';
+      testLocalServer.disabled = true;
+      try {
+        const data = await checkLocalTurbo();
+        localServerStatus.textContent = 'Connected: ' + (data.device || 'local') + ' — model ready.';
+      } catch (error) {
+        localServerStatus.textContent = error.message || 'Could not connect to local engine.';
+      } finally {
+        testLocalServer.disabled = false;
+      }
+    });
 
     script.addEventListener('input', () => {
       refreshStats();
@@ -876,13 +952,15 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
       generate.disabled = true;
       output.style.display = 'none';
-      status.textContent = engine.value === 'chatterbox_turbo'
+      status.textContent = engine.value === 'chatterbox_turbo_local'
+        ? 'Preparing local Chatterbox Turbo…'
+        : (engine.value === 'chatterbox_turbo'
         ? 'Preparing Chatterbox Turbo…'
-        : (engine.value === 'chatterbox' ? 'Preparing Chatterbox…' : 'Generating narration…');
+        : (engine.value === 'chatterbox' ? 'Preparing Chatterbox…' : 'Generating narration…'));
 
       try {
-        if (engine.value === 'chatterbox' || engine.value === 'chatterbox_turbo') {
-          if (engine.value === 'chatterbox_turbo') {
+        if (engine.value === 'chatterbox' || engine.value === 'chatterbox_turbo' || engine.value === 'chatterbox_turbo_local') {
+          if (engine.value === 'chatterbox_turbo' || engine.value === 'chatterbox_turbo_local') {
             const temp = Number(turboTemperature.value);
             const p = Number(topP.value);
             const k = Number(topK.value);
@@ -903,31 +981,40 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           }
 
           const referenceDataUri = await ensureChatterboxReference();
-          status.textContent = engine.value === 'chatterbox_turbo' ? 'Starting Chatterbox Turbo…' : 'Starting Chatterbox…';
-          const started = await createChatterboxPrediction(text, referenceDataUri);
-          if (!started.id) throw new Error('Chatterbox did not return a prediction ID.');
 
-          await waitForChatterbox(started.id);
+          let blob;
+          if (engine.value === 'chatterbox_turbo_local') {
+            status.textContent = 'Generating on your Mac…';
+            blob = await callLocalTurbo(text, referenceDataUri);
+          } else {
+            status.textContent = engine.value === 'chatterbox_turbo' ? 'Starting Chatterbox Turbo…' : 'Starting Chatterbox…';
+            const started = await createChatterboxPrediction(text, referenceDataUri);
+            if (!started.id) throw new Error('Chatterbox did not return a prediction ID.');
 
-          status.textContent = 'Downloading generated audio…';
-          const audioResponse = await fetch('/api/chatterbox-audio?id=' + encodeURIComponent(started.id), { cache: 'no-store' });
-          if (!audioResponse.ok) {
-            let message = 'Could not download generated audio.';
-            try {
-              const error = await audioResponse.json();
-              if (error && error.error) message = error.error;
-            } catch (_) {}
-            throw new Error(message);
+            await waitForChatterbox(started.id);
+
+            status.textContent = 'Downloading generated audio…';
+            const audioResponse = await fetch('/api/chatterbox-audio?id=' + encodeURIComponent(started.id), { cache: 'no-store' });
+            if (!audioResponse.ok) {
+              let message = 'Could not download generated audio.';
+              try {
+                const error = await audioResponse.json();
+                if (error && error.error) message = error.error;
+              } catch (_) {}
+              throw new Error(message);
+            }
+            blob = await audioResponse.blob();
           }
 
-          const blob = await audioResponse.blob();
           if (objectUrl) URL.revokeObjectURL(objectUrl);
           objectUrl = URL.createObjectURL(blob);
           audio.src = objectUrl;
           download.href = objectUrl;
           download.download = 'story-narration-chatterbox.wav';
           output.style.display = 'block';
-          status.textContent = engine.value === 'chatterbox_turbo' ? 'Finished with Chatterbox Turbo.' : 'Finished with Chatterbox.';
+          status.textContent = engine.value === 'chatterbox_turbo_local'
+            ? 'Finished with local Chatterbox Turbo.'
+            : (engine.value === 'chatterbox_turbo' ? 'Finished with Chatterbox Turbo.' : 'Finished with Chatterbox.');
         } else {
           const selectedSpeed = Number(speed.value);
           if (!Number.isFinite(selectedSpeed) || selectedSpeed < 0.25 || selectedSpeed > 4) {
