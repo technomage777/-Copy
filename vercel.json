@@ -8,6 +8,15 @@
     },
     "api/custom-voice.js": {
       "maxDuration": 60
+    },
+    "api/chatterbox-reference.js": {
+      "maxDuration": 60
+    },
+    "api/chatterbox-generate.js": {
+      "maxDuration": 60
+    },
+    "api/chatterbox-status.js": {
+      "maxDuration": 60
     }
   }
-}
+}\n
