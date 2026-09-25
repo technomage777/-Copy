@@ -26,3 +26,5 @@ This branch contains a personal OpenAI text-to-speech web app designed for 24-wo
 Do not commit an API key to GitHub. The browser calls `/api/speech`, and that serverless function reads the key from Vercel's environment.
 
 The app uses OpenAI's `POST /v1/audio/speech` endpoint.
+
+Deployment trigger: Vercel-ready.
