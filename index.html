@@ -202,7 +202,8 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           <label for="engine">Engine</label>
           <select id="engine">
             <option value="openai" selected>OpenAI TTS</option>
-            <option value="chatterbox">Chatterbox Voice Clone</option>
+            <option value="chatterbox">Chatterbox Standard</option>
+            <option value="chatterbox_turbo">Chatterbox Turbo</option>
           </select>
         </div>
 
@@ -278,29 +279,61 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
               <div id="chatterboxRefStatus" class="custom-status" aria-live="polite"></div>
             </div>
 
-            <div class="row">
-              <div class="field">
-                <label for="exaggeration">Expressiveness</label>
-                <input id="exaggeration" type="number" min="0.25" max="2" step="0.05" value="0.50">
+            <div id="chatterboxStandardControls">
+              <div class="row">
+                <div class="field">
+                  <label for="exaggeration">Expressiveness</label>
+                  <input id="exaggeration" type="number" min="0.25" max="2" step="0.05" value="0.50">
+                </div>
+                <div class="field">
+                  <label for="cfgWeight">CFG / Pace</label>
+                  <input id="cfgWeight" type="number" min="0.2" max="1" step="0.05" value="0.40">
+                </div>
               </div>
-              <div class="field">
-                <label for="cfgWeight">CFG / Pace</label>
-                <input id="cfgWeight" type="number" min="0.2" max="1" step="0.05" value="0.40">
+
+              <div class="row">
+                <div class="field">
+                  <label for="temperature">Temperature</label>
+                  <input id="temperature" type="number" min="0.05" max="5" step="0.05" value="0.80">
+                </div>
+                <div class="field">
+                  <label for="seed">Seed</label>
+                  <input id="seed" type="number" min="0" step="1" value="42">
+                </div>
               </div>
             </div>
 
-            <div class="row">
-              <div class="field">
-                <label for="temperature">Temperature</label>
-                <input id="temperature" type="number" min="0.05" max="5" step="0.05" value="0.80">
+            <div id="chatterboxTurboControls" class="hidden">
+              <div class="row">
+                <div class="field">
+                  <label for="turboTemperature">Temperature</label>
+                  <input id="turboTemperature" type="number" min="0.05" max="2" step="0.05" value="0.65">
+                </div>
+                <div class="field">
+                  <label for="turboSeed">Seed</label>
+                  <input id="turboSeed" type="number" min="0" step="1" value="42">
+                </div>
               </div>
-              <div class="field">
-                <label for="seed">Seed</label>
-                <input id="seed" type="number" min="0" step="1" value="0">
+
+              <div class="row">
+                <div class="field">
+                  <label for="topP">Top P</label>
+                  <input id="topP" type="number" min="0.5" max="1" step="0.01" value="0.90">
+                </div>
+                <div class="field">
+                  <label for="topK">Top K</label>
+                  <input id="topK" type="number" min="1" max="2000" step="1" value="1000">
+                </div>
               </div>
+
+              <div class="field">
+                <label for="repetitionPenalty">Repetition Penalty</label>
+                <input id="repetitionPenalty" type="number" min="1" max="2" step="0.05" value="1.20">
+              </div>
+              <p class="mini">Turbo allows up to 500 characters per generation. Lower Top P can make delivery more focused and less variable.</p>
             </div>
 
-            <p class="mini">Chatterbox currently returns WAV. OpenAI voice instructions are not sent to Chatterbox; use these controls for delivery.</p>
+            <p class="mini">Chatterbox returns WAV. OpenAI voice instructions are not sent to Chatterbox. Standard uses Expressiveness/CFG; Turbo uses sampling controls.</p>
           </div>
         </details>
 
@@ -356,6 +389,13 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const chatterboxFile = document.getElementById('chatterboxFile');
     const saveChatterboxVoice = document.getElementById('saveChatterboxVoice');
     const chatterboxRefStatus = document.getElementById('chatterboxRefStatus');
+    const chatterboxStandardControls = document.getElementById('chatterboxStandardControls');
+    const chatterboxTurboControls = document.getElementById('chatterboxTurboControls');
+    const turboTemperature = document.getElementById('turboTemperature');
+    const turboSeed = document.getElementById('turboSeed');
+    const topP = document.getElementById('topP');
+    const topK = document.getElementById('topK');
+    const repetitionPenalty = document.getElementById('repetitionPenalty');
     const exaggeration = document.getElementById('exaggeration');
     const cfgWeight = document.getElementById('cfgWeight');
     const temperature = document.getElementById('temperature');
@@ -479,12 +519,20 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     }
 
     function applyEngineUI() {
-      const isChatterbox = engine.value === 'chatterbox';
-      modelLabel.textContent = isChatterbox ? 'resemble-ai/chatterbox' : 'gpt-4o-mini-tts';
+      const isStandard = engine.value === 'chatterbox';
+      const isTurbo = engine.value === 'chatterbox_turbo';
+      const isChatterbox = isStandard || isTurbo;
+
+      modelLabel.textContent = isTurbo
+        ? 'resemble-ai/chatterbox-turbo'
+        : (isStandard ? 'resemble-ai/chatterbox' : 'gpt-4o-mini-tts');
+
       openaiVoiceField.classList.toggle('hidden', isChatterbox);
       openaiCustomVoice.classList.toggle('hidden', isChatterbox);
       openaiSpeedField.classList.toggle('hidden', isChatterbox);
       chatterboxPanel.classList.toggle('hidden', !isChatterbox);
+      chatterboxStandardControls.classList.toggle('hidden', !isStandard);
+      chatterboxTurboControls.classList.toggle('hidden', !isTurbo);
     }
 
     function fileToDataURL(file) {
@@ -531,10 +579,16 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         body: JSON.stringify({
           input: text,
           reference_data_uri: referenceDataUri,
+          engine: engine.value,
           exaggeration: Number(exaggeration.value),
           cfg_weight: Number(cfgWeight.value),
           temperature: Number(temperature.value),
-          seed: Math.max(0, Math.floor(Number(seed.value) || 0))
+          seed: Math.max(0, Math.floor(Number(seed.value) || 0)),
+          turbo_temperature: Number(turboTemperature.value),
+          turbo_seed: Math.max(0, Math.floor(Number(turboSeed.value) || 0)),
+          top_p: Number(topP.value),
+          top_k: Math.max(1, Math.floor(Number(topK.value) || 1000)),
+          repetition_penalty: Number(repetitionPenalty.value)
         })
       });
       const data = await response.json().catch(() => ({}));
@@ -569,6 +623,11 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           cfgWeight: cfgWeight.value,
           temperature: temperature.value,
           seed: seed.value,
+          turboTemperature: turboTemperature.value,
+          turboSeed: turboSeed.value,
+          topP: topP.value,
+          topK: topK.value,
+          repetitionPenalty: repetitionPenalty.value,
           chatterboxRefName: chatterboxRefStatus.dataset.refName || '',
           voice: voice.value,
           speed: speed.value,
@@ -590,11 +649,16 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
         if (typeof state.script === 'string') script.value = state.script;
         if (typeof state.instructions === 'string') instructions.value = state.instructions;
-        if (state.engine === 'openai' || state.engine === 'chatterbox') engine.value = state.engine;
+        if (state.engine === 'openai' || state.engine === 'chatterbox' || state.engine === 'chatterbox_turbo') engine.value = state.engine;
         if (state.exaggeration !== undefined) exaggeration.value = state.exaggeration;
         if (state.cfgWeight !== undefined) cfgWeight.value = state.cfgWeight;
         if (state.temperature !== undefined) temperature.value = state.temperature;
         if (state.seed !== undefined) seed.value = state.seed;
+        if (state.turboTemperature !== undefined) turboTemperature.value = state.turboTemperature;
+        if (state.turboSeed !== undefined) turboSeed.value = state.turboSeed;
+        if (state.topP !== undefined) topP.value = state.topP;
+        if (state.topK !== undefined) topK.value = state.topK;
+        if (state.repetitionPenalty !== undefined) repetitionPenalty.value = state.repetitionPenalty;
         if (typeof state.chatterboxRefName === 'string' && state.chatterboxRefName) {
           chatterboxRefStatus.dataset.refName = state.chatterboxRefName;
           chatterboxRefStatus.textContent = 'Reference voice saved: ' + state.chatterboxRefName;
@@ -780,6 +844,11 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     cfgWeight.addEventListener('input', saveState);
     temperature.addEventListener('input', saveState);
     seed.addEventListener('input', saveState);
+    turboTemperature.addEventListener('input', saveState);
+    turboSeed.addEventListener('input', saveState);
+    topP.addEventListener('input', saveState);
+    topK.addEventListener('input', saveState);
+    repetitionPenalty.addEventListener('input', saveState);
 
     script.addEventListener('input', () => {
       refreshStats();
@@ -807,19 +876,34 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
       generate.disabled = true;
       output.style.display = 'none';
-      status.textContent = engine.value === 'chatterbox' ? 'Preparing Chatterbox…' : 'Generating narration…';
+      status.textContent = engine.value === 'chatterbox_turbo'
+        ? 'Preparing Chatterbox Turbo…'
+        : (engine.value === 'chatterbox' ? 'Preparing Chatterbox…' : 'Generating narration…');
 
       try {
-        if (engine.value === 'chatterbox') {
-          const ex = Number(exaggeration.value);
-          const cfg = Number(cfgWeight.value);
-          const temp = Number(temperature.value);
-          if (!Number.isFinite(ex) || ex < 0.25 || ex > 2) throw new Error('Expressiveness must be between 0.25 and 2.00.');
-          if (!Number.isFinite(cfg) || cfg < 0.2 || cfg > 1) throw new Error('CFG / Pace must be between 0.20 and 1.00.');
-          if (!Number.isFinite(temp) || temp < 0.05 || temp > 5) throw new Error('Temperature must be between 0.05 and 5.00.');
+        if (engine.value === 'chatterbox' || engine.value === 'chatterbox_turbo') {
+          if (engine.value === 'chatterbox_turbo') {
+            const temp = Number(turboTemperature.value);
+            const p = Number(topP.value);
+            const k = Number(topK.value);
+            const rep = Number(repetitionPenalty.value);
+
+            if (text.length > 500) throw new Error('Chatterbox Turbo allows a maximum of 500 characters per generation.');
+            if (!Number.isFinite(temp) || temp < 0.05 || temp > 2) throw new Error('Turbo temperature must be between 0.05 and 2.00.');
+            if (!Number.isFinite(p) || p < 0.5 || p > 1) throw new Error('Top P must be between 0.50 and 1.00.');
+            if (!Number.isFinite(k) || k < 1 || k > 2000) throw new Error('Top K must be between 1 and 2000.');
+            if (!Number.isFinite(rep) || rep < 1 || rep > 2) throw new Error('Repetition Penalty must be between 1.00 and 2.00.');
+          } else {
+            const ex = Number(exaggeration.value);
+            const cfg = Number(cfgWeight.value);
+            const temp = Number(temperature.value);
+            if (!Number.isFinite(ex) || ex < 0.25 || ex > 2) throw new Error('Expressiveness must be between 0.25 and 2.00.');
+            if (!Number.isFinite(cfg) || cfg < 0.2 || cfg > 1) throw new Error('CFG / Pace must be between 0.20 and 1.00.');
+            if (!Number.isFinite(temp) || temp < 0.05 || temp > 5) throw new Error('Temperature must be between 0.05 and 5.00.');
+          }
 
           const referenceDataUri = await ensureChatterboxReference();
-          status.textContent = 'Starting Chatterbox…';
+          status.textContent = engine.value === 'chatterbox_turbo' ? 'Starting Chatterbox Turbo…' : 'Starting Chatterbox…';
           const started = await createChatterboxPrediction(text, referenceDataUri);
           if (!started.id) throw new Error('Chatterbox did not return a prediction ID.');
 
@@ -843,7 +927,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           download.href = objectUrl;
           download.download = 'story-narration-chatterbox.wav';
           output.style.display = 'block';
-          status.textContent = 'Finished with Chatterbox.';
+          status.textContent = engine.value === 'chatterbox_turbo' ? 'Finished with Chatterbox Turbo.' : 'Finished with Chatterbox.';
         } else {
           const selectedSpeed = Number(speed.value);
           if (!Number.isFinite(selectedSpeed) || selectedSpeed < 0.25 || selectedSpeed > 4) {
