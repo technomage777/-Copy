@@ -143,9 +143,9 @@
   <main class="wrap">
     <div class="top-actions"><button id="logoutButton" class="logout hidden" type="button">Log out</button></div>
     <header>
-      <div class="eyebrow">OpenAI TTS</div>
+      <div class="eyebrow">AI Narration Studio</div>
       <h1>Story Voice Studio</h1>
-      <p class="sub">Paste your narration, keep each scene in its own 24-word paragraph, choose an exact speed such as 0.95, and generate a single audio file with your storytelling instructions.</p>
+      <p class="sub">Use OpenAI for instruction-driven narration or Chatterbox for voice cloning from a reference sample. Your 24-word scene workflow stays in the same app.</p>
     </header>
 
     <div class="grid">
@@ -199,11 +199,19 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
       <aside class="card">
         <div class="field">
-          <label>Model</label>
-          <div class="model">gpt-4o-mini-tts</div>
+          <label for="engine">Engine</label>
+          <select id="engine">
+            <option value="openai" selected>OpenAI TTS</option>
+            <option value="chatterbox">Chatterbox Voice Clone</option>
+          </select>
         </div>
 
         <div class="field">
+          <label>Model</label>
+          <div id="modelLabel" class="model">gpt-4o-mini-tts</div>
+        </div>
+
+        <div id="openaiVoiceField" class="field">
           <label for="voice">Voice</label>
           <select id="voice">
             <option>alloy</option>
@@ -222,7 +230,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           </select>
         </div>
 
-        <details class="custom-voice">
+        <details id="openaiCustomVoice" class="custom-voice">
           <summary>Create Custom Voice</summary>
           <div class="custom-body">
             <p class="mini">Requires OpenAI custom-voice access. The consent recording and sample must be the same speaker. This app sends uploads through your authenticated server; your API key remains hidden.</p>
@@ -256,7 +264,47 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           </div>
         </details>
 
-        <div class="field">
+
+        <details id="chatterboxPanel" class="custom-voice hidden" open>
+          <summary>Chatterbox Voice Clone</summary>
+          <div class="custom-body">
+            <p class="mini">Upload a clean reference sample for a voice you have permission to use. The sample is saved locally in this browser and uploaded temporarily when Chatterbox needs it.</p>
+
+            <div class="field">
+              <label for="chatterboxFile">Reference voice sample</label>
+              <input id="chatterboxFile" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac,.webm,audio/wav,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a,audio/ogg,audio/flac,audio/webm">
+              <p class="mini">A clean 10–30 second sample is ideal. Keep the file under 4 MB.</p>
+              <button id="saveChatterboxVoice" type="button">Save reference voice</button>
+              <div id="chatterboxRefStatus" class="custom-status" aria-live="polite"></div>
+            </div>
+
+            <div class="row">
+              <div class="field">
+                <label for="exaggeration">Expressiveness</label>
+                <input id="exaggeration" type="number" min="0.25" max="2" step="0.05" value="0.50">
+              </div>
+              <div class="field">
+                <label for="cfgWeight">CFG / Pace</label>
+                <input id="cfgWeight" type="number" min="0.2" max="1" step="0.05" value="0.40">
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="field">
+                <label for="temperature">Temperature</label>
+                <input id="temperature" type="number" min="0.05" max="5" step="0.05" value="0.80">
+              </div>
+              <div class="field">
+                <label for="seed">Seed</label>
+                <input id="seed" type="number" min="0" step="1" value="0">
+              </div>
+            </div>
+
+            <p class="mini">Chatterbox currently returns WAV. OpenAI voice instructions are not sent to Chatterbox; use these controls for delivery.</p>
+          </div>
+        </details>
+
+        <div id="openaiSpeedField" class="field">
           <label for="speed">Speed</label>
           <input id="speed" type="number" value="0.95" min="0.25" max="4" step="0.01" inputmode="decimal">
           <div class="quick">
@@ -299,6 +347,19 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const words = document.getElementById('words');
     const scenes = document.getElementById('scenes');
     const sceneList = document.getElementById('sceneList');
+    const engine = document.getElementById('engine');
+    const modelLabel = document.getElementById('modelLabel');
+    const openaiVoiceField = document.getElementById('openaiVoiceField');
+    const openaiCustomVoice = document.getElementById('openaiCustomVoice');
+    const openaiSpeedField = document.getElementById('openaiSpeedField');
+    const chatterboxPanel = document.getElementById('chatterboxPanel');
+    const chatterboxFile = document.getElementById('chatterboxFile');
+    const saveChatterboxVoice = document.getElementById('saveChatterboxVoice');
+    const chatterboxRefStatus = document.getElementById('chatterboxRefStatus');
+    const exaggeration = document.getElementById('exaggeration');
+    const cfgWeight = document.getElementById('cfgWeight');
+    const temperature = document.getElementById('temperature');
+    const seed = document.getElementById('seed');
     const speed = document.getElementById('speed');
     const voice = document.getElementById('voice');
     const format = document.getElementById('format');
@@ -385,11 +446,139 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       return data;
     }
 
-    function saveState() {
+    function openVoiceDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('storyVoiceStudioDB', 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function saveReferenceLocally(file) {
+      const db = await openVoiceDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('files', 'readwrite');
+        tx.objectStore('files').put(file, 'chatterbox-reference');
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function getReferenceLocally() {
+      const db = await openVoiceDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('files', 'readonly');
+        const request = tx.objectStore('files').get('chatterbox-reference');
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function applyEngineUI() {
+      const isChatterbox = engine.value === 'chatterbox';
+      modelLabel.textContent = isChatterbox ? 'resemble-ai/chatterbox' : 'gpt-4o-mini-tts';
+      openaiVoiceField.classList.toggle('hidden', isChatterbox);
+      openaiCustomVoice.classList.toggle('hidden', isChatterbox);
+      openaiSpeedField.classList.toggle('hidden', isChatterbox);
+      chatterboxPanel.classList.toggle('hidden', !isChatterbox);
+    }
+
+    async function uploadChatterboxReference(file) {
+      validateUpload(file, 'reference voice');
+      const duration = await audioDuration(file);
+      if (duration < 5) throw new Error('Reference sample should contain at least 5 seconds of speech.');
+      if (duration > 60.5) throw new Error('Please use a reference sample 60 seconds or shorter.');
+
+      const response = await fetch('/api/chatterbox-reference', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(file.name || 'reference.wav'),
+          'X-File-Type': file.type || 'application/octet-stream'
+        },
+        body: file
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Reference upload failed.');
+
+      chatterboxRefStatus.dataset.refUrl = data.url || '';
+      chatterboxRefStatus.dataset.refExpires = data.expires_at || '';
+      chatterboxRefStatus.dataset.refName = file.name || 'reference audio';
+      chatterboxRefStatus.textContent = 'Reference voice ready: ' + (file.name || 'audio sample');
+      await saveReferenceLocally(file);
+      saveState();
+      return data.url;
+    }
+
+    async function ensureChatterboxReference() {
+      const currentUrl = chatterboxRefStatus.dataset.refUrl || '';
+      const expires = chatterboxRefStatus.dataset.refExpires || '';
+      const expiresMs = expires ? Date.parse(expires) : 0;
+      if (currentUrl && (!expiresMs || expiresMs > Date.now() + 120000)) return currentUrl;
+
+      const localFile = await getReferenceLocally();
+      if (!localFile) throw new Error('Choose and save a Chatterbox reference voice first.');
+      chatterboxRefStatus.textContent = 'Refreshing reference voice…';
+      return await uploadChatterboxReference(localFile);
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function createChatterboxPrediction(text, referenceUrl) {
+      const response = await fetch('/api/chatterbox-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: text,
+          reference_url: referenceUrl,
+          exaggeration: Number(exaggeration.value),
+          cfg_weight: Number(cfgWeight.value),
+          temperature: Number(temperature.value),
+          seed: Math.max(0, Math.floor(Number(seed.value) || 0))
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Could not start Chatterbox generation.');
+      return data;
+    }
+
+    async function waitForChatterbox(predictionId) {
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const response = await fetch('/api/chatterbox-status?id=' + encodeURIComponent(predictionId), { cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not check Chatterbox status.');
+
+        if (data.status === 'succeeded') return data;
+        if (data.status === 'failed' || data.status === 'canceled') {
+          throw new Error(data.error || 'Chatterbox generation ' + data.status + '.');
+        }
+
+        status.textContent = 'Chatterbox is generating… ' + (data.status || '');
+        await sleep(2000);
+      }
+      throw new Error('Chatterbox generation is taking unusually long. Please try again.');
+    }
+
+    async function saveState() {
       try {
         const state = {
           script: script.value,
           instructions: instructions.value,
+          engine: engine.value,
+          exaggeration: exaggeration.value,
+          cfgWeight: cfgWeight.value,
+          temperature: temperature.value,
+          seed: seed.value,
+          chatterboxRefUrl: chatterboxRefStatus.dataset.refUrl || '',
+          chatterboxRefExpires: chatterboxRefStatus.dataset.refExpires || '',
+          chatterboxRefName: chatterboxRefStatus.dataset.refName || '',
           voice: voice.value,
           speed: speed.value,
           format: format.value,
@@ -410,6 +599,17 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
         if (typeof state.script === 'string') script.value = state.script;
         if (typeof state.instructions === 'string') instructions.value = state.instructions;
+        if (state.engine === 'openai' || state.engine === 'chatterbox') engine.value = state.engine;
+        if (state.exaggeration !== undefined) exaggeration.value = state.exaggeration;
+        if (state.cfgWeight !== undefined) cfgWeight.value = state.cfgWeight;
+        if (state.temperature !== undefined) temperature.value = state.temperature;
+        if (state.seed !== undefined) seed.value = state.seed;
+        if (typeof state.chatterboxRefUrl === 'string' && state.chatterboxRefUrl) {
+          chatterboxRefStatus.dataset.refUrl = state.chatterboxRefUrl;
+          chatterboxRefStatus.dataset.refExpires = state.chatterboxRefExpires || '';
+          chatterboxRefStatus.dataset.refName = state.chatterboxRefName || 'saved reference';
+          chatterboxRefStatus.textContent = 'Reference voice saved: ' + (state.chatterboxRefName || 'audio sample');
+        }
 
         if (Array.isArray(state.customVoices)) {
           state.customVoices.forEach(item => addCustomVoiceOption(item.id, item.name, false));
@@ -567,6 +767,31 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       }
     });
 
+    saveChatterboxVoice.addEventListener('click', async () => {
+      chatterboxRefStatus.textContent = '';
+      saveChatterboxVoice.disabled = true;
+      saveChatterboxVoice.textContent = 'Saving…';
+      try {
+        const file = chatterboxFile.files[0];
+        if (!file) throw new Error('Choose a reference voice file first.');
+        await uploadChatterboxReference(file);
+      } catch (error) {
+        chatterboxRefStatus.textContent = error.message || 'Could not save reference voice.';
+      } finally {
+        saveChatterboxVoice.disabled = false;
+        saveChatterboxVoice.textContent = 'Save reference voice';
+      }
+    });
+
+    engine.addEventListener('change', () => {
+      applyEngineUI();
+      saveState();
+    });
+    exaggeration.addEventListener('input', saveState);
+    cfgWeight.addEventListener('input', saveState);
+    temperature.addEventListener('input', saveState);
+    seed.addEventListener('input', saveState);
+
     script.addEventListener('input', () => {
       refreshStats();
       saveState();
@@ -591,47 +816,81 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         return;
       }
 
-      const selectedSpeed = Number(speed.value);
-      if (!Number.isFinite(selectedSpeed) || selectedSpeed < 0.25 || selectedSpeed > 4) {
-        status.textContent = 'Speed must be between 0.25 and 4.00.';
-        return;
-      }
-
       generate.disabled = true;
       output.style.display = 'none';
-      status.textContent = 'Generating narration…';
+      status.textContent = engine.value === 'chatterbox' ? 'Preparing Chatterbox…' : 'Generating narration…';
 
       try {
-        const response = await fetch('/api/speech', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            input: text,
-            instructions: instructions.value,
-            voice: voice.value,
-            speed: selectedSpeed,
-            format: format.value
-          })
-        });
+        if (engine.value === 'chatterbox') {
+          const ex = Number(exaggeration.value);
+          const cfg = Number(cfgWeight.value);
+          const temp = Number(temperature.value);
+          if (!Number.isFinite(ex) || ex < 0.25 || ex > 2) throw new Error('Expressiveness must be between 0.25 and 2.00.');
+          if (!Number.isFinite(cfg) || cfg < 0.2 || cfg > 1) throw new Error('CFG / Pace must be between 0.20 and 1.00.');
+          if (!Number.isFinite(temp) || temp < 0.05 || temp > 5) throw new Error('Temperature must be between 0.05 and 5.00.');
 
-        if (!response.ok) {
-          let message = 'Generation failed.';
+          const referenceUrl = await ensureChatterboxReference();
+          status.textContent = 'Starting Chatterbox…';
+          const started = await createChatterboxPrediction(text, referenceUrl);
+          if (!started.id) throw new Error('Chatterbox did not return a prediction ID.');
+
+          const result = await waitForChatterbox(started.id);
+          const outputUrl = Array.isArray(result.output) ? result.output[0] : result.output;
+          if (!outputUrl) throw new Error('Chatterbox finished without an audio file.');
+
           try {
-            const error = await response.json();
-            if (error && error.error) message = error.error;
-          } catch (_) {}
-          throw new Error(message);
-        }
+            const audioResponse = await fetch(outputUrl);
+            if (!audioResponse.ok) throw new Error('Could not download generated audio.');
+            const blob = await audioResponse.blob();
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            objectUrl = URL.createObjectURL(blob);
+            audio.src = objectUrl;
+            download.href = objectUrl;
+          } catch (_) {
+            audio.src = outputUrl;
+            download.href = outputUrl;
+          }
 
-        const blob = await response.blob();
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-        objectUrl = URL.createObjectURL(blob);
-        audio.src = objectUrl;
-        download.href = objectUrl;
-        const extensions = { mp3: 'mp3', wav: 'wav', flac: 'flac', aac: 'aac', opus: 'opus', pcm: 'pcm' };
-        download.download = 'story-narration.' + (extensions[format.value] || format.value);
-        output.style.display = 'block';
-        status.textContent = 'Finished.';
+          download.download = 'story-narration-chatterbox.wav';
+          output.style.display = 'block';
+          status.textContent = 'Finished with Chatterbox.';
+        } else {
+          const selectedSpeed = Number(speed.value);
+          if (!Number.isFinite(selectedSpeed) || selectedSpeed < 0.25 || selectedSpeed > 4) {
+            throw new Error('Speed must be between 0.25 and 4.00.');
+          }
+
+          const response = await fetch('/api/speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              input: text,
+              instructions: instructions.value,
+              voice: voice.value,
+              speed: selectedSpeed,
+              format: format.value
+            })
+          });
+
+          if (!response.ok) {
+            let message = 'Generation failed.';
+            try {
+              const error = await response.json();
+              if (error && error.error) message = error.error;
+            } catch (_) {}
+            throw new Error(message);
+          }
+
+          const blob = await response.blob();
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = URL.createObjectURL(blob);
+          audio.src = objectUrl;
+          download.href = objectUrl;
+          const extensions = { mp3: 'mp3', wav: 'wav', flac: 'flac', aac: 'aac', opus: 'opus', pcm: 'pcm' };
+          download.download = 'story-narration.' + (extensions[format.value] || format.value);
+          output.style.display = 'block';
+          status.textContent = 'Finished.';
+        }
       } catch (err) {
         status.textContent = err.message || 'Generation failed.';
       } finally {
@@ -640,6 +899,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     });
 
     loadState();
+    applyEngineUI();
     refreshStats();
     refreshAuth();
   </script>
