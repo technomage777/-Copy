@@ -1,3 +1,4 @@
+const { isAuthorized } = require('./_auth');
 const VOICES = new Set([
   'alloy','ash','ballad','coral','echo','fable','nova','onyx','sage','shimmer','verse','marin','cedar'
 ]);
@@ -9,6 +10,10 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Use POST.' });
+  }
+
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ error: 'Please log in first.' });
   }
 
   if (!process.env.OPENAI_API_KEY) {
