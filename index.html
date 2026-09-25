@@ -439,8 +439,24 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
                 <input id="polishPresence" type="number" min="-4" max="8" step="0.5" value="2.5">
               </div>
               <div class="field">
-                <label for="polishSibilance">Sibilance Cut (dB)</label>
-                <input id="polishSibilance" type="number" min="-8" max="0" step="0.5" value="-1.5">
+                <label for="polishSibilance">Static Sibilance EQ (dB)</label>
+                <input id="polishSibilance" type="number" min="-8" max="0" step="0.5" value="-0.5">
+              </div>
+              <div class="field">
+                <label for="deEssFreq">De-Esser Frequency (Hz)</label>
+                <input id="deEssFreq" type="number" min="3500" max="10000" step="100" value="6500">
+              </div>
+              <div class="field">
+                <label for="deEssThreshold">De-Esser Threshold (dB)</label>
+                <input id="deEssThreshold" type="number" min="-50" max="-8" step="1" value="-28">
+              </div>
+              <div class="field">
+                <label for="deEssRatio">De-Esser Ratio</label>
+                <input id="deEssRatio" type="number" min="1" max="12" step="0.5" value="5">
+              </div>
+              <div class="field">
+                <label for="deEssMaxReduction">Max S Reduction (dB)</label>
+                <input id="deEssMaxReduction" type="number" min="0" max="12" step="0.5" value="5">
               </div>
               <div class="field">
                 <label for="polishAir">Air / Shine (dB)</label>
@@ -472,7 +488,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
               </div>
             </div>
 
-            <p class="note">Defaults are tuned for a clear narration voice: remove low rumble, reduce boxiness, add presence and air, soften harsh S sounds, compress gently, then normalize the peak.</p>
+            <p class="note">Defaults are tuned for a clear narration voice: remove low rumble, reduce boxiness, add presence and air, dynamically tame harsh S sounds only when they spike, compress gently, then normalize the peak.</p>
 
             <div class="polish-actions">
               <button id="applyPolish" type="button">Polish Voice</button>
@@ -538,6 +554,10 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     const polishMud = document.getElementById('polishMud');
     const polishPresence = document.getElementById('polishPresence');
     const polishSibilance = document.getElementById('polishSibilance');
+    const deEssFreq = document.getElementById('deEssFreq');
+    const deEssThreshold = document.getElementById('deEssThreshold');
+    const deEssRatio = document.getElementById('deEssRatio');
+    const deEssMaxReduction = document.getElementById('deEssMaxReduction');
     const polishAir = document.getElementById('polishAir');
     const polishThreshold = document.getElementById('polishThreshold');
     const polishRatio = document.getElementById('polishRatio');
@@ -804,19 +824,23 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
     const POLISH_PRESETS = {
       crisp: {
-        highpass: 75, body: 0.5, mud: -2, presence: 2.5, sibilance: -1.5, air: 1.5,
+        highpass: 75, body: 0.5, mud: -2, presence: 2.0, sibilance: -0.5, air: 1.0,
+        deEssFreq: 6500, deEssThreshold: -28, deEssRatio: 5, deEssMaxReduction: 5,
         threshold: -20, ratio: 3, attack: 10, release: 180, mix: 100, peak: -1
       },
       warm: {
-        highpass: 70, body: 1.5, mud: -1, presence: 1, sibilance: -1, air: 0.5,
+        highpass: 70, body: 1.5, mud: -1, presence: 1, sibilance: -0.5, air: 0.5,
+        deEssFreq: 6400, deEssThreshold: -26, deEssRatio: 4, deEssMaxReduction: 4,
         threshold: -18, ratio: 2.5, attack: 15, release: 220, mix: 100, peak: -1
       },
       gentle: {
-        highpass: 65, body: 0, mud: -1, presence: 1, sibilance: -0.5, air: 0.75,
+        highpass: 65, body: 0, mud: -1, presence: 1, sibilance: 0, air: 0.75,
+        deEssFreq: 6500, deEssThreshold: -24, deEssRatio: 3, deEssMaxReduction: 3,
         threshold: -16, ratio: 2, attack: 15, release: 200, mix: 100, peak: -1
       },
       broadcast: {
-        highpass: 80, body: 0, mud: -2.5, presence: 3, sibilance: -2, air: 2,
+        highpass: 80, body: 0, mud: -2.5, presence: 2.5, sibilance: -0.5, air: 1.5,
+        deEssFreq: 6600, deEssThreshold: -30, deEssRatio: 6, deEssMaxReduction: 6,
         threshold: -24, ratio: 4, attack: 8, release: 150, mix: 100, peak: -0.8
       }
     };
@@ -828,6 +852,10 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
       polishMud.value = p.mud;
       polishPresence.value = p.presence;
       polishSibilance.value = p.sibilance;
+      deEssFreq.value = p.deEssFreq;
+      deEssThreshold.value = p.deEssThreshold;
+      deEssRatio.value = p.deEssRatio;
+      deEssMaxReduction.value = p.deEssMaxReduction;
       polishAir.value = p.air;
       polishThreshold.value = p.threshold;
       polishRatio.value = p.ratio;
@@ -852,6 +880,51 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
         return await ctx.decodeAudioData(bytes.slice(0));
       } finally {
         try { await ctx.close(); } catch (_) {}
+      }
+    }
+
+    function applyDynamicDeEsser(buffer, frequency, thresholdDb, ratio, maxReductionDb) {
+      const sampleRate = buffer.sampleRate;
+      const dt = 1 / sampleRate;
+      const rc = 1 / (2 * Math.PI * frequency);
+      const hpAlpha = rc / (rc + dt);
+
+      const attackSeconds = 0.0025;
+      const releaseSeconds = 0.055;
+      const attackCoeff = Math.exp(-1 / (sampleRate * attackSeconds));
+      const releaseCoeff = Math.exp(-1 / (sampleRate * releaseSeconds));
+
+      const thresholdLinear = Math.pow(10, thresholdDb / 20);
+      const channels = buffer.numberOfChannels;
+      const data = [];
+      for (let c = 0; c < channels; c++) data.push(buffer.getChannelData(c));
+
+      let previousInput = 0;
+      let previousHp = 0;
+      let envelope = 0;
+
+      for (let i = 0; i < buffer.length; i++) {
+        let detectorInput = 0;
+        for (let c = 0; c < channels; c++) detectorInput += data[c][i];
+        detectorInput /= channels;
+
+        const hp = hpAlpha * (previousHp + detectorInput - previousInput);
+        previousInput = detectorInput;
+        previousHp = hp;
+
+        const rectified = Math.abs(hp);
+        const coeff = rectified > envelope ? attackCoeff : releaseCoeff;
+        envelope = coeff * envelope + (1 - coeff) * rectified;
+
+        let gain = 1;
+        if (envelope > thresholdLinear) {
+          const envDb = 20 * Math.log10(Math.max(envelope, 1e-9));
+          const overDb = Math.max(0, envDb - thresholdDb);
+          const reductionDb = Math.min(maxReductionDb, overDb * (1 - 1 / ratio));
+          gain = Math.pow(10, -reductionDb / 20);
+        }
+
+        for (let c = 0; c < channels; c++) data[c][i] *= gain;
       }
     }
 
@@ -984,6 +1057,15 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
 
       source.start(0);
       const rendered = await ctx.startRendering();
+
+      applyDynamicDeEsser(
+        rendered,
+        clampNumber(deEssFreq, 3500, 10000, 6500),
+        clampNumber(deEssThreshold, -50, -8, -28),
+        clampNumber(deEssRatio, 1, 12, 5),
+        clampNumber(deEssMaxReduction, 0, 12, 5)
+      );
+
       normalizeAudioBuffer(rendered, clampNumber(polishPeak, -6, -0.1, -1));
       return audioBufferToWav(rendered);
     }
@@ -1010,6 +1092,10 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
             mud: polishMud.value,
             presence: polishPresence.value,
             sibilance: polishSibilance.value,
+            deEssFreq: deEssFreq.value,
+            deEssThreshold: deEssThreshold.value,
+            deEssRatio: deEssRatio.value,
+            deEssMaxReduction: deEssMaxReduction.value,
             air: polishAir.value,
             threshold: polishThreshold.value,
             ratio: polishRatio.value,
@@ -1056,6 +1142,10 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           if (state.polish.mud !== undefined) polishMud.value = state.polish.mud;
           if (state.polish.presence !== undefined) polishPresence.value = state.polish.presence;
           if (state.polish.sibilance !== undefined) polishSibilance.value = state.polish.sibilance;
+          if (state.polish.deEssFreq !== undefined) deEssFreq.value = state.polish.deEssFreq;
+          if (state.polish.deEssThreshold !== undefined) deEssThreshold.value = state.polish.deEssThreshold;
+          if (state.polish.deEssRatio !== undefined) deEssRatio.value = state.polish.deEssRatio;
+          if (state.polish.deEssMaxReduction !== undefined) deEssMaxReduction.value = state.polish.deEssMaxReduction;
           if (state.polish.air !== undefined) polishAir.value = state.polish.air;
           if (state.polish.threshold !== undefined) polishThreshold.value = state.polish.threshold;
           if (state.polish.ratio !== undefined) polishRatio.value = state.polish.ratio;
@@ -1274,7 +1364,8 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
     });
 
     [
-      polishHighpass, polishBody, polishMud, polishPresence, polishSibilance, polishAir,
+      polishHighpass, polishBody, polishMud, polishPresence, polishSibilance,
+      deEssFreq, deEssThreshold, deEssRatio, deEssMaxReduction, polishAir,
       polishThreshold, polishRatio, polishAttack, polishRelease, polishMix, polishPeak
     ].forEach(control => control.addEventListener('input', saveState));
 
@@ -1298,7 +1389,7 @@ Never read formatting, paragraph markers, timing instructions, or any text that 
           throw new Error('Generate narration first, or choose an audio file to polish.');
         }
 
-        polishStatus.textContent = 'Applying EQ, compression, and final normalization…';
+        polishStatus.textContent = 'Applying EQ, dynamic de-essing, compression, and final normalization…';
         const polishedBlob = await polishAudio(sourceBlob);
 
         if (polishedObjectUrl) URL.revokeObjectURL(polishedObjectUrl);
