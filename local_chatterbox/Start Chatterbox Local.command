@@ -20,8 +20,11 @@ else
   exit 1
 fi
 
-echo "Starting Story Voice Studio local Chatterbox Turbo..."
+echo "Starting Story Voice Studio — Offline..."
 echo "Using $($VENV_PY --version)"
-echo "Leave this window open while using the local engine."
+echo "The local interface will open at http://127.0.0.1:8765"
+echo "Leave this window open while using Chatterbox."
 echo ""
+
+(sleep 6; open "http://127.0.0.1:8765") >/dev/null 2>&1 &
 exec "$VENV_PY" -m uvicorn server:app --host 127.0.0.1 --port 8765
