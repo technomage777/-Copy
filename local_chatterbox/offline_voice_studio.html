@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Story Voice Studio — Offline</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#f5f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{width:min(980px,calc(100% - 28px));margin:0 auto;padding:34px 0 60px}
+h1{margin:6px 0 8px;font-size:clamp(32px,5vw,52px);letter-spacing:-.04em}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8fb4ff}
+.sub{color:#9ba8bc;line-height:1.55;margin:0 0 22px}.grid{display:grid;grid-template-columns:1.35fr .8fr;gap:18px;align-items:start}
+.card{background:#121a2b;border:1px solid #2a3850;border-radius:18px;padding:18px}
+label{display:block;font-size:13px;font-weight:750;margin-bottom:7px}.field+.field{margin-top:14px}
+textarea,input{width:100%;background:#0d1525;color:#f5f7fb;border:1px solid #2a3850;border-radius:11px;font:inherit;outline:none}
+textarea{min-height:310px;padding:13px;line-height:1.55;resize:vertical}input{height:42px;padding:0 11px}
+input[type=file]{height:auto;padding:9px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{width:100%;border:0;border-radius:12px;padding:13px 16px;margin-top:15px;font:inherit;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#94b8ff,#82e2bc);color:#07101f}
+button:disabled{opacity:.55;cursor:wait}.secondary{background:#1c2940;color:#f5f7fb;border:1px solid #2a3850}
+.status{min-height:22px;margin-top:11px;color:#9ba8bc;font-size:13px;line-height:1.45}.good{color:#8be0b0}.bad{color:#ff9b9b}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;color:#9ba8bc;font-size:12px}.pill{border:1px solid #2a3850;border-radius:999px;padding:5px 8px;background:#0d1525}
+audio{width:100%;margin-top:10px}.download{display:inline-flex;margin-top:10px;text-decoration:none;background:#8be0b0;color:#07101f;padding:9px 12px;border-radius:9px;font-weight:800;font-size:13px}
+.note{font-size:12px;color:#9ba8bc;line-height:1.5}.saved{color:#8be0b0;font-size:12px;margin-top:7px}
+@media(max-width:760px){.grid,.row{grid-template-columns:1fr}.wrap{padding-top:24px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<div class="eyebrow">100% Local Mode</div>
+<h1>Story Voice Studio — Offline</h1>
+<p class="sub">Chatterbox Turbo runs entirely on this Mac. No Vercel, Replicate, or internet connection is required once the model is installed locally.</p>
+<div class="grid">
+<section class="card">
+<div class="field">
+<label for="script">Narration</label>
+<textarea id="script" maxlength="500" placeholder="Paste up to 500 characters..."></textarea>
+<div class="meta"><span class="pill"><span id="chars">0</span> / 500 characters</span><span class="pill"><span id="words">0</span> words</span></div>
+</div>
+<div class="field">
+<label for="voiceFile">Reference voice</label>
+<input id="voiceFile" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.webm">
+<button id="saveVoice" class="secondary" type="button">Save Reference Voice on This Mac</button>
+<div id="voiceStatus" class="saved"></div>
+</div>
+<div class="field">
+<label>Generated audio</label>
+<audio id="audio" controls></audio>
+<a id="download" class="download" href="#" download="chatterbox-offline.wav" style="display:none">Download WAV</a>
+</div>
+</section>
+<aside class="card">
+<div class="field">
+<label>Local engine</label>
+<div id="engineStatus" class="status">Checking local Chatterbox…</div>
+</div>
+<div class="row">
+<div class="field"><label for="temperature">Temperature</label><input id="temperature" type="number" min="0.05" max="2" step="0.05" value="0.65"></div>
+<div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" step="1" value="42"></div>
+</div>
+<div class="row">
+<div class="field"><label for="topP">Top P</label><input id="topP" type="number" min="0" max="1" step="0.01" value="0.90"></div>
+<div class="field"><label for="topK">Top K</label><input id="topK" type="number" min="0" max="2000" step="1" value="1000"></div>
+</div>
+<div class="field"><label for="repPenalty">Repetition Penalty</label><input id="repPenalty" type="number" min="1" max="2" step="0.05" value="1.20"></div>
+<button id="generate" type="button">Generate Locally</button>
+<div id="status" class="status"></div>
+<p class="note">Tip: commas usually create shorter pauses than periods. Settings and the saved reference voice are stored locally in this browser on this Mac.</p>
+</aside>
+</div>
+</main>
+<script>
+const script=document.getElementById('script'), chars=document.getElementById('chars'), words=document.getElementById('words');
+const voiceFile=document.getElementById('voiceFile'), saveVoice=document.getElementById('saveVoice'), voiceStatus=document.getElementById('voiceStatus');
+const temperature=document.getElementById('temperature'), seed=document.getElementById('seed'), topP=document.getElementById('topP'), topK=document.getElementById('topK'), repPenalty=document.getElementById('repPenalty');
+const generate=document.getElementById('generate'), status=document.getElementById('status'), engineStatus=document.getElementById('engineStatus');
+const audio=document.getElementById('audio'), download=document.getElementById('download');
+let objectUrl=null;
+const KEY='svs-offline-settings-v1';
+
+function countWords(t){const s=t.trim();return s?s.split(/\s+/).filter(Boolean).length:0}
+function refresh(){chars.textContent=script.value.length;words.textContent=countWords(script.value);saveSettings()}
+function saveSettings(){try{localStorage.setItem(KEY,JSON.stringify({script:script.value,temperature:temperature.value,seed:seed.value,topP:topP.value,topK:topK.value,repPenalty:repPenalty.value}))}catch(_){}}
+function loadSettings(){try{const s=JSON.parse(localStorage.getItem(KEY)||'{}');if(typeof s.script==='string')script.value=s.script;if(s.temperature!==undefined)temperature.value=s.temperature;if(s.seed!==undefined)seed.value=s.seed;if(s.topP!==undefined)topP.value=s.topP;if(s.topK!==undefined)topK.value=s.topK;if(s.repPenalty!==undefined)repPenalty.value=s.repPenalty}catch(_){}}
+function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('svs-offline-db',1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('files'))r.result.createObjectStore('files')};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+async function putVoice(file){const db=await openDB();return new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').put(file,'reference');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
+async function getVoice(){const db=await openDB();return new Promise((resolve,reject)=>{const tx=db.transaction('files','readonly');const r=tx.objectStore('files').get('reference');r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)})}
+function fileToDataURL(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||''));r.onerror=()=>reject(r.error);r.readAsDataURL(file)})}
+async function checkSavedVoice(){const f=await getVoice();voiceStatus.textContent=f?'Saved: '+f.name:'No saved reference voice yet.'}
+async function health(){try{const r=await fetch('/health',{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error();engineStatus.textContent='Ready — '+(d.device||'local')+' / '+(d.model||'chatterbox-turbo');engineStatus.className='status good'}catch(_){engineStatus.textContent='Local engine is not responding.';engineStatus.className='status bad'}}
+
+saveVoice.addEventListener('click',async()=>{voiceStatus.textContent='';try{const f=voiceFile.files[0];if(!f)throw new Error('Choose a reference audio file first.');if(f.size>8*1024*1024)throw new Error('Keep the reference file under 8 MB.');await putVoice(f);voiceStatus.textContent='Saved: '+f.name}catch(e){voiceStatus.textContent=e.message||'Could not save reference voice.'}});
+[script,temperature,seed,topP,topK,repPenalty].forEach(el=>el.addEventListener('input',refresh));
+generate.addEventListener('click',async()=>{
+  status.textContent='';download.style.display='none';generate.disabled=true;generate.textContent='Generating…';
+  try{
+    const text=script.value.trim();if(!text)throw new Error('Paste narration first.');if(text.length>500)throw new Error('Turbo is limited to 500 characters.');
+    const f=await getVoice();if(!f)throw new Error('Save a reference voice first.');
+    const ref=await fileToDataURL(f);
+    const payload={input:text,reference_data_uri:ref,temperature:Number(temperature.value),seed:Math.max(0,Math.floor(Number(seed.value)||0)),top_p:Number(topP.value),top_k:Math.max(0,Math.floor(Number(topK.value)||0)),repetition_penalty:Number(repPenalty.value),norm_loudness:true};
+    status.textContent='Chatterbox is generating locally…';
+    const r=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok){let m='Generation failed.';try{const d=await r.json();m=d.detail||d.error||m}catch(_){}throw new Error(m)}
+    const blob=await r.blob();if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(blob);audio.src=objectUrl;download.href=objectUrl;download.style.display='inline-flex';status.textContent='Finished locally.'
+  }catch(e){status.textContent=e.message||'Generation failed.'}finally{generate.disabled=false;generate.textContent='Generate Locally'}
+});
+loadSettings();refresh();checkSavedVoice();health();
+</script>
+</body>
+</html>
