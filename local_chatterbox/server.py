@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, HTMLResponse
 from pydantic import BaseModel, Field
 from chatterbox.tts_turbo import ChatterboxTurboTTS
 
