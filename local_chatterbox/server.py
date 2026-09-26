@@ -5,6 +5,7 @@ import random
 import re
 import tempfile
 import wave
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -89,6 +90,16 @@ def wav_bytes(tensor, sample_rate: int):
         wf.setframerate(sample_rate)
         wf.writeframes(pcm.tobytes())
     return buffer.getvalue()
+
+@app.get("/", response_class=HTMLResponse)
+def offline_ui():
+    ui_path = Path(__file__).with_name("offline_voice_studio.html")
+    if not ui_path.exists():
+        return HTMLResponse(
+            "<h1>Offline UI file is missing.</h1><p>Place offline_voice_studio.html beside server.py.</p>",
+            status_code=500,
+        )
+    return HTMLResponse(ui_path.read_text(encoding="utf-8"))
 
 @app.get("/health")
 def health():
